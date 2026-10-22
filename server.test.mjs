@@ -278,6 +278,8 @@ test('Supabase store persists JSON using the private API key and revision-checke
   assert.equal((await storage.load({ includeSamples: false })).members[0].username, 'player.one');
 
   const writes = requests.filter(request => request.options.method === 'POST');
+  const reads = requests.filter(request => request.options.method !== 'POST');
+  assert.ok(reads.every(request => new URL(request.url).searchParams.get('select') === 'state,revision'));
   assert.equal(writes.length, 2);
   assert.ok(writes.every(request => request.url === 'https://venpura-example.supabase.co/rest/v1/rpc/venpura_save_state'));
   assert.ok(writes.every(request => request.options.headers.apikey === 'server-only-secret'));

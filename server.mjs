@@ -129,7 +129,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
     async load(seedOptions) {
       const readUrl = new URL(endpoint);
       readUrl.searchParams.set('id', 'eq.venpura');
-      readUrl.searchParams.set('select', 'state');
+      readUrl.searchParams.set('select', 'state,revision');
       const response = await fetchImpl(readUrl, { headers, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) {
         throw new Error(`Supabase database read failed (${response.status}). Confirm the venpura_state table and service-role key: ${await response.text()}`);
