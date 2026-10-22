@@ -302,6 +302,11 @@ function eventPayments(event) {
   return payments.filter(payment => payment.eventId === event.id);
 }
 
+function paymentToggle(eventId, member, payment) {
+  const paid = Boolean(payment?.paid);
+  return `<button class="payment-toggle${paid ? ' is-paid' : ''}" type="button" role="switch" aria-checked="${paid}" aria-label="${esc(`${member.name}: mark ${paid ? 'unpaid' : 'paid'}`)}" data-action="payment" data-event="${esc(eventId)}" data-member="${esc(member.id)}" data-paid="${!paid}"><span class="payment-toggle-track"><span class="payment-toggle-thumb"></span></span><span>${paid ? 'Paid' : 'Unpaid'}</span></button>`;
+}
+
 function contributorsCard(event, compact = false, canManage = false) {
   if (!event) return `<section class="card"><div class="card-header"><div><h2 class="card-title">Match-day kitty</h2><p class="card-caption">Shared, fair and easy to follow.</p></div></div><div class="empty-state">Add a Saturday fixture to start the ₹30 match fund.</div></section>`;
   const list = eventPayments(event);
@@ -310,15 +315,17 @@ function contributorsCard(event, compact = false, canManage = false) {
   const totalPaid = list.filter(payment => payment.paid).reduce((total, item) => total + item.amount, 0);
   const totalExpected = amount * state.members.length;
   const paidRatio = totalExpected ? Math.round(totalPaid / totalExpected * 100) : 0;
+  const paidNames = membersByName().filter(member => list.some(payment => payment.memberId === member.id && payment.paid)).map(member => member.name);
   return `
     <section class="card money-card">
       <div class="card-header"><div><h2 class="card-title">${event.type === 'tournament' ? 'Tournament entry' : 'Saturday Match'}</h2><p class="card-caption">${esc(dateParts(event.date).full)} · ₹${amount} per person</p></div><button class="text-link" data-nav="money">View all →</button></div>
       <div class="progress-track"><div class="progress-fill" style="width:${paidRatio}%"></div></div>
       <div class="progress-caption"><span>₹${totalPaid} collected of ₹${totalExpected}</span><span>${paidCount}/${state.members.length} paid</span></div>
+      <div class="paid-summary"><strong>Paid by:</strong> ${paidNames.length ? paidNames.map(name => esc(name)).join(', ') : 'No payments recorded yet'}</div>
       <div class="contributor-list">${membersByName().map(member => {
         const payment = list.find(item => item.memberId === member.id);
         const status = canManage && isAdminUser()
-          ? `<button class="button button-small ${payment?.paid ? 'button-soft' : ''}" data-action="payment" data-event="${esc(event.id)}" data-member="${esc(member.id)}" data-paid="${payment?.paid ? 'false' : 'true'}">${payment?.paid ? 'Mark unpaid' : 'Mark paid'}</button>`
+          ? paymentToggle(event.id, member, payment)
           : payment?.paid ? '<span class="paid-status">✓ Paid</span>' : '<span class="unpaid-status">Unpaid</span>';
         return `<div class="contributor-row">${personCell(member)}<span class="amount">₹${amount}</span>${status}</div>`;
       }).join('')}</div>
@@ -354,13 +361,14 @@ function renderHome() {
   const weekendFixtures = upcoming.filter(event => event.type === 'weekend').slice(0, 2);
   const saturday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 6);
   const sunday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 0);
-  const paid = saturday ? eventPayments(saturday).filter(payment => payment.paid).length : 0;
+  const saturdayPayments = saturday ? eventPayments(saturday) : [];
+  const totalCollected = saturdayPayments.filter(payment => payment.paid).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const target = saturday ? 30 * state.members.length : 0;
   return `
     <section class="stats-grid" aria-label="Team at a glance">
       <div class="stat-card"><span class="stat-symbol">▦</span><div><div class="stat-label">UP NEXT</div><div class="stat-value">${upcoming.length}</div><div class="stat-footnote">matches on the calendar</div></div></div>
       <div class="stat-card"><span class="stat-symbol">◉</span><div><div class="stat-label">THE SQUAD</div><div class="stat-value">${state.members.length}</div><div class="stat-footnote">players and counting</div></div></div>
-      <div class="stat-card"><span class="stat-symbol">✓</span><div><div class="stat-label">SATURDAY MATCH</div><div class="stat-value">₹${paid * 30}</div><div class="stat-footnote">of ₹${target} contributed</div></div></div>
+      <div class="stat-card"><span class="stat-symbol">✓</span><div><div class="stat-label">SATURDAY MATCH</div><div class="stat-value">₹${totalCollected}</div><div class="stat-footnote">of ₹${target} collected</div></div></div>
       <div class="stat-card"><span class="stat-symbol">↗</span><div><div class="stat-label">SEASON RUNS</div><div class="stat-value">${state.members.reduce((total, member) => total + member.matches * member.average, 0).toLocaleString('en-IN')}</div><div class="stat-footnote">across the squad</div></div></div>
     </section>
     <div class="dashboard-grid">
@@ -556,7 +564,7 @@ function renderAdmin() {
       <section class="card"><div class="card-header"><div><h2 class="card-title">Saturday Match</h2><p class="card-caption">${saturday ? `${esc(dateParts(saturday.date).full)} · ₹30 per person` : 'No Saturday match scheduled.'}</p></div></div>
         ${saturday ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>PLAYER</th><th>SHARE</th><th>STATUS</th></tr></thead><tbody>${membersByName().map(member => {
           const payment = payments.find(item => item.memberId === member.id);
-          return `<tr><td>${esc(member.name)}</td><td>₹30</td><td><button class="button button-small ${payment?.paid ? 'button-soft' : ''}" data-action="payment" data-event="${esc(saturday.id)}" data-member="${esc(member.id)}" data-paid="${payment?.paid ? 'false' : 'true'}">${payment?.paid ? 'Mark unpaid' : 'Mark paid'}</button></td></tr>`;
+          return `<tr><td>${esc(member.name)}</td><td>₹30</td><td>${paymentToggle(saturday.id, member, payment)}</td></tr>`;
         }).join('')}</tbody></table></div>` : '<div class="empty-state">Add a Saturday fixture to start.</div>'}
       </section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">Sunday Ball buyer</h2><p class="card-caption">${sunday ? esc(dateParts(sunday.date).full) : 'No Sunday match scheduled.'}</p></div></div>
