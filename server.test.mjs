@@ -437,6 +437,30 @@ test('production supports username/password signup, rate limits failures, and pr
   });
   assert.equal(profileUpdate.status, 200);
   assert.equal((await profileUpdate.json()).user.cricheroesId, 'player-123');
+  const photoBytes = Buffer.from('test profile photo');
+  const unauthenticatedPhotoUpload = await fetch(`${baseUrl}/api/profile/photo`, {
+    method: 'POST', headers: { 'content-type': 'image/png' }, body: photoBytes
+  });
+  assert.equal(unauthenticatedPhotoUpload.status, 401);
+  const profilePhotoUpload = await fetch(`${baseUrl}/api/profile/photo`, {
+    method: 'POST', headers: { cookie: memberCookie, 'content-type': 'image/png' }, body: photoBytes
+  });
+  assert.equal(profilePhotoUpload.status, 200);
+  assert.match((await profilePhotoUpload.json()).user.profilePhotoUrl, /^\/api\/profile\/photo\//);
+  const photoId = storedState.members.find(member => member.username === 'player.one').id;
+  assert.equal((await send(baseUrl, `/api/profile/photo/${photoId}`)).status, 401);
+  const profilePhoto = await send(baseUrl, `/api/profile/photo/${photoId}`, { cookie: memberCookie });
+  assert.equal(profilePhoto.status, 200);
+  assert.equal(profilePhoto.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await profilePhoto.arrayBuffer()), photoBytes);
+  const memberWithPhoto = (await (await send(baseUrl, '/api/bootstrap', { cookie: memberCookie })).json())
+    .members.find(member => member.id === photoId);
+  assert.match(memberWithPhoto.profilePhotoUrl, /^\/api\/profile\/photo\//);
+  assert.equal(memberWithPhoto.profilePhotoPath, undefined);
+  const unsupportedPhoto = await fetch(`${baseUrl}/api/profile/photo`, {
+    method: 'POST', headers: { cookie: memberCookie, 'content-type': 'image/gif' }, body: photoBytes
+  });
+  assert.equal(unsupportedPhoto.status, 415);
   const invalidProfileLink = await send(baseUrl, '/api/profile', {
     method: 'POST', cookie: memberCookie,
     body: {

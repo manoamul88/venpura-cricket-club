@@ -256,8 +256,15 @@ function createLocalMediaStorage(dataFile) {
 }
 
 function publicMember(member, includeContact = false) {
-  const { passwordSalt, passwordHash, passwordResetTokenHash, passwordResetExpiresAt, isAdmin, email, phone, ...publicData } = member;
-  return { ...publicData, ...(includeContact ? { email, phone } : {}) };
+  const {
+    passwordSalt, passwordHash, passwordResetTokenHash, passwordResetExpiresAt,
+    isAdmin, email, phone, profilePhotoPath, profilePhotoContentType, ...publicData
+  } = member;
+  return {
+    ...publicData,
+    ...(profilePhotoPath ? { profilePhotoUrl: `/api/profile/photo/${encodeURIComponent(member.id)}` } : {}),
+    ...(includeContact ? { email, phone } : {})
+  };
 }
 
 function normalizeUsername(value) {
@@ -840,6 +847,51 @@ function createAppServer({
           currentUser.role = role;
           currentUser.cricheroesId = cricheroesId;
           await dataStore.save(data);
+          return respond(200, { user: publicMember(currentUser, true) });
+        }
+        const profilePhotoMatch = pathname.match(/^\/api\/profile\/photo\/([a-z0-9-]+)$/i);
+        if (profilePhotoMatch && request.method === 'GET') {
+          if (!requireUser()) return;
+          const member = data.members.find(item => item.id === profilePhotoMatch[1]);
+          if (!member?.profilePhotoPath) return respond(404, { error: 'This player has not uploaded a profile photo.' });
+          const bytes = await mediaStore.get(member.profilePhotoPath);
+          response.writeHead(200, securityHeaders({
+            'content-type': member.profilePhotoContentType,
+            'content-length': bytes.length,
+            'content-disposition': 'inline',
+            'cache-control': 'private, no-store'
+          }));
+          return response.end(bytes);
+        }
+        if (request.method === 'POST' && pathname === '/api/profile/photo') {
+          if (!requireUser()) return;
+          const contentType = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+          const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif' };
+          if (!extensions[contentType]) return respond(415, { error: 'Upload a JPG, PNG, WebP, or AVIF profile photo.' });
+          const bytes = await readBinaryBody(request, 5_000_000);
+          const objectPath = `profiles/${currentUser.id}/${randomBytes(16).toString('hex')}.${extensions[contentType]}`;
+          const previousPath = currentUser.profilePhotoPath;
+          const previousContentType = currentUser.profilePhotoContentType;
+          await mediaStore.upload(objectPath, bytes, contentType);
+          currentUser.profilePhotoPath = objectPath;
+          currentUser.profilePhotoContentType = contentType;
+          try {
+            await dataStore.save(data);
+          } catch (error) {
+            if (previousPath) currentUser.profilePhotoPath = previousPath;
+            else delete currentUser.profilePhotoPath;
+            if (previousContentType) currentUser.profilePhotoContentType = previousContentType;
+            else delete currentUser.profilePhotoContentType;
+            try { await mediaStore.remove(objectPath); } catch (cleanupError) {
+              console.error(`Could not clean up an unregistered VENPURA profile photo: ${cleanupError.message}`);
+            }
+            throw error;
+          }
+          if (previousPath) {
+            try { await mediaStore.remove(previousPath); } catch (error) {
+              console.error(`Could not remove a replaced VENPURA profile photo: ${error.message}`);
+            }
+          }
           return respond(200, { user: publicMember(currentUser, true) });
         }
         if (request.method === 'POST' && pathname === '/api/availability') {

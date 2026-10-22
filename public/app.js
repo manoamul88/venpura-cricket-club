@@ -262,7 +262,7 @@ function renderActivePage() {
 }
 
 function avatarHtml(member, extraClass = '') {
-  return `<span class="avatar ${extraClass}">${esc(initials(member.name))}</span>`;
+  return `<span class="avatar ${extraClass}">${member.profilePhotoUrl ? `<img src="${esc(member.profilePhotoUrl)}" alt="" loading="lazy">` : esc(initials(member.name))}</span>`;
 }
 
 function myAnswer(eventId) {
@@ -619,7 +619,10 @@ function closeModal() {
 
 function openProfile() {
   const content = `
-    <form id="profile-form"><div class="field-grid">
+    <form id="profile-form"><div class="profile-photo-field">
+      <span class="profile-photo-preview">${avatarHtml(state.user, 'avatar-profile')}</span>
+      <label class="field"><span class="field-label">Profile photo</span><input name="profilePhoto" type="file" accept="image/jpeg,image/png,image/webp,image/avif" class="field-input"><span class="field-help">JPG, PNG, WebP or AVIF · up to 5 MB</span></label>
+    </div><div class="field-grid">
       <label class="field"><span class="field-label">First name *</span><input name="firstName" class="field-input" required value="${esc(state.user.firstName)}"></label>
       <label class="field"><span class="field-label">Last name *</span><input name="lastName" class="field-input" required value="${esc(state.user.lastName)}"></label>
       <label class="field field-wide"><span class="field-label">Email address *</span><input name="email" type="email" autocomplete="email" maxlength="254" class="field-input" required value="${esc(state.user.email)}"></label>
@@ -866,14 +869,28 @@ document.addEventListener('submit', async event => {
     }
   }
   if (form.id === 'profile-form') {
-    const values = Object.fromEntries(new FormData(form));
+    const formData = new FormData(form);
+    const values = Object.fromEntries([...formData.entries()].filter(([key]) => key !== 'profilePhoto'));
+    const photo = formData.get('profilePhoto');
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
     try {
       await api('/api/profile', { method: 'POST', body: JSON.stringify(values) });
+      if (photo instanceof File && photo.size) {
+        await api('/api/profile/photo', {
+          method: 'POST',
+          body: photo,
+          headers: { 'content-type': photo.type }
+        });
+      }
       await refreshData();
       closeModal();
       renderShell();
       toast('Your player card looks good.');
-    } catch (error) { toast(error.message, true); }
+    } catch (error) {
+      toast(error.message, true);
+      submit.disabled = false;
+    }
   }
   if (form.id === 'fixture-form') {
     const values = Object.fromEntries(new FormData(form));
