@@ -388,11 +388,14 @@ function createAppServer({
               username: configuredAdminUsername,
               firstName: process.env.VENPURA_ADMIN_FIRST_NAME || 'Club',
               lastName: process.env.VENPURA_ADMIN_LAST_NAME || 'Admin',
+              name: `${process.env.VENPURA_ADMIN_FIRST_NAME || 'Club'} ${process.env.VENPURA_ADMIN_LAST_NAME || 'Admin'}`,
               role: 'all-rounder', matches: 0, average: 0, wickets: 0, runs: 0, isAdmin: true
             };
             data.members.push(admin);
           }
-          if (!admin.isAdmin || admin.passwordSalt !== credential.passwordSalt || admin.passwordHash !== credential.passwordHash) {
+          const adminNeedsName = !admin.name;
+          if (adminNeedsName) admin.name = `${admin.firstName || 'Club'} ${admin.lastName || 'Admin'}`;
+          if (!admin.isAdmin || admin.passwordSalt !== credential.passwordSalt || admin.passwordHash !== credential.passwordHash || adminNeedsName) {
             admin.isAdmin = true;
             admin.passwordSalt = credential.passwordSalt;
             admin.passwordHash = credential.passwordHash;

@@ -220,7 +220,7 @@ function renderShell() {
           <div class="breadcrumb">VENPURA <span aria-hidden="true">/</span> <strong>${esc(title)}</strong></div>
           <div class="top-actions">
             <button type="button" class="icon-button" data-action="notifications" aria-label="View notifications">♧${unread ? '<span class="notification-dot"></span>' : ''}</button>
-            <button type="button" class="user-button" data-action="profile"><span>${esc(state.user.name.split(' ')[0])}</span><span class="avatar">${esc(initials(state.user.name))}</span></button>
+            <button type="button" class="user-button" data-action="profile"><span>${esc((state.user.name || `${state.user.firstName || ''} ${state.user.lastName || ''}`).trim().split(/\s+/)[0])}</span><span class="avatar">${esc(initials(state.user.name || `${state.user.firstName || ''} ${state.user.lastName || ''}`))}</span></button>
           </div>
         </header>
         <main class="content">

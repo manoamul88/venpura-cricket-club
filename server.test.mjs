@@ -205,7 +205,9 @@ test('production supports username/password signup, rate limits failures, and pr
   });
   assert.equal(adminLogin.status, 200);
   assert.match(adminLogin.headers.get('set-cookie'), /; Secure/);
-  assert.equal((await adminLogin.json()).isAdmin, true);
+  const adminLoginResult = await adminLogin.json();
+  assert.equal(adminLoginResult.isAdmin, true);
+  assert.equal(adminLoginResult.user.name, 'Club Admin');
 
   const signedUp = await send(baseUrl, '/api/auth/signup', {
     method: 'POST',
