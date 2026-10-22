@@ -121,7 +121,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
   const rpcEndpoint = new URL('/rest/v1/rpc/venpura_save_state', url);
   const headers = {
     apikey: serviceRoleKey,
-    authorization: `Bearer ${serviceRoleKey}`,
+    ...(serviceRoleKey.startsWith('sb_secret_') ? {} : { authorization: `Bearer ${serviceRoleKey}` }),
     'content-type': 'application/json'
   };
 

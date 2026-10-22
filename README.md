@@ -18,13 +18,13 @@ The free hosting tiers can sleep or pause and are intended for a small team/demo
 ### Create your shareable link
 
 1. Create a free GitHub repository, then upload/push this app’s project files. Do **not** include `data/`, `.env`, passwords, or Supabase service-role keys. The existing workspace itself does not have a Git remote.
-2. Create a Supabase project. Open **SQL Editor**, paste and run [`supabase/schema.sql`](./supabase/schema.sql). In **Project Settings → API**, copy the project URL and the server-only `service_role` key. Do not use the `service_role` key in any browser code or commit it.
+2. Create a Supabase project. Open **SQL Editor**, paste and run [`supabase/schema.sql`](./supabase/schema.sql). In **Project Settings → API Keys**, copy the project URL and the server-only **Secret key** (it starts with `sb_secret_`). The app supports Supabase's newer secret key and legacy `service_role` key. Never use either secret in browser code or commit it.
 3. In Render, create a **Blueprint** and connect the GitHub repository containing this project. Render detects [`render.yaml`](./render.yaml) and creates the free Docker web service. Its Environment settings will ask for:
 
    - `VENPURA_ADMIN_USERNAME`: choose the captain’s username.
    - `VENPURA_ADMIN_PASSWORD`: set a unique, strong password of at least 12 characters.
    - `SUPABASE_URL`: your Supabase project URL.
-   - `SUPABASE_SERVICE_ROLE_KEY`: your private Supabase service-role key.
+   - `SUPABASE_SERVICE_ROLE_KEY`: your private Supabase Secret key (`sb_secret_...`) or legacy `service_role` key.
 
    Enter all secrets directly into the Render dashboard, never in chat or Git.
 4. Deploy the Blueprint. When Render reports **Live**, copy the generated `https://venpura-cricket-club.onrender.com` (your actual name may differ) link and send it to your friends.

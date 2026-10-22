@@ -281,5 +281,23 @@ test('Supabase store persists JSON using the private API key and revision-checke
   assert.equal(writes.length, 2);
   assert.ok(writes.every(request => request.url === 'https://venpura-example.supabase.co/rest/v1/rpc/venpura_save_state'));
   assert.ok(writes.every(request => request.options.headers.apikey === 'server-only-secret'));
+  assert.ok(writes.every(request => request.options.headers.authorization === 'Bearer server-only-secret'));
   assert.equal(JSON.parse(writes[1].options.body).p_expected_revision, 1);
+});
+
+test('Supabase store sends modern secret keys as API keys, not bearer JWTs', async () => {
+  let requestOptions;
+  const storage = createSupabaseStore({
+    url: 'https://venpura-example.supabase.co',
+    serviceRoleKey: 'sb_secret_example',
+    fetchImpl: async (_url, options) => {
+      requestOptions = options;
+      return Response.json([]);
+    }
+  });
+
+  await storage.load({ includeSamples: false });
+
+  assert.equal(requestOptions.headers.apikey, 'sb_secret_example');
+  assert.equal('authorization' in requestOptions.headers, false);
 });
