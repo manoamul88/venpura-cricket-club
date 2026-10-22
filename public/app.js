@@ -273,9 +273,17 @@ function answerCount(eventId, answer) {
   return Object.values(state.availability[eventId] || {}).filter(value => value === answer).length;
 }
 
+function yesVoters(eventId) {
+  const yesIds = Object.entries(state.availability[eventId] || {})
+    .filter(([, answer]) => answer === 'yes')
+    .map(([memberId]) => memberId);
+  return membersByName().filter(member => yesIds.includes(member.id));
+}
+
 function fixtureCard(event) {
   const parts = dateParts(event.date);
   const myVote = myAnswer(event.id);
+  const confirmedPlayers = yesVoters(event.id);
   const typeBadge = event.type === 'tournament' ? '<span class="badge badge-gold">✦ Tournament</span>' : '<span class="badge">Weekend fixture</span>';
   return `
     <article class="match-card" data-event-card="${esc(event.id)}">
@@ -294,6 +302,7 @@ function fixtureCard(event) {
         </span>
         <div class="vote-actions"><button class="button button-small${myVote === 'yes' ? ' selected-yes' : ' button-soft'}" data-action="vote" data-event="${esc(event.id)}" data-answer="yes">✓ Yes</button><button class="button button-small${myVote === 'no' ? ' selected-no' : ''}" data-action="vote" data-event="${esc(event.id)}" data-answer="no">No</button></div>
       </div>
+      <div class="availability-yes-list"><strong>Available (${confirmedPlayers.length}):</strong> ${confirmedPlayers.length ? confirmedPlayers.map(member => esc(member.name)).join(', ') : 'No Yes responses yet'}</div>
     </article>`;
 }
 

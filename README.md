@@ -52,7 +52,7 @@ Local demo accounts:
 ## Included
 
 - **Match calendar:** distinct Saturday match, Sunday match, and tournament fixture types, with matching date validation, start times, grounds, and an availability yes/no poll.
-- **Availability poll:** players can update their Yes/No response for upcoming matches at any time; the dashboard displays the response counts.
+- **Availability poll:** players can update their Yes/No response for upcoming matches at any time; each fixture shows the names of players who answered Yes as well as the response count.
 - **Player cards:** required first and last names and a choice of Bowler, Batter, All Rounder, or Wicket Keeper.
 - **CricHeroes profiles and scorecards:** every player can add a CricHeroes ID or official profile link. Admins can attach the official scorecard URL to a fixture; squad members open that link from the dashboard, where mobile devices may hand it off to the CricHeroes app. Scorecard details are not embedded because CricHeroes does not publish a verified public API for this app.
 - **Squad and stats:** player roster, batting-average and wicket charts, clearly labelled sample performance figures, and admin-entered per-player match scorecards that update season totals.
