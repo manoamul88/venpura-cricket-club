@@ -165,6 +165,93 @@ test('availability closes after Wednesday and Monday ball reminders rotate alpha
   assert.equal(data.notifications.filter(item => item.id === reminder.id).length, 1);
 });
 
+test('match media is private to signed-in members and removable by its owner or admin', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'venpura-media-test-'));
+  const server = createAppServer({ dataFile: path.join(directory, 'team.json') });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    await new Promise(resolve => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  assert.equal((await send(baseUrl, '/api/media')).status, 401);
+  const memberLogin = await send(baseUrl, '/api/demo-login', { method: 'POST' });
+  const memberCookie = memberLogin.headers.get('set-cookie').split(';')[0];
+  const bytes = Buffer.from('VENPURA test image');
+  const upload = await fetch(`${baseUrl}/api/media?eventId=fixture-saturday&caption=Match%20day`, {
+    method: 'POST',
+    headers: { cookie: memberCookie, 'content-type': 'image/png' },
+    body: bytes
+  });
+  assert.equal(upload.status, 201);
+  const { id } = await upload.json();
+
+  const listed = await (await send(baseUrl, '/api/media', { cookie: memberCookie })).json();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].caption, 'Match day');
+  assert.equal(listed[0].memberName, 'Kavin Nair');
+  assert.equal(listed[0].objectPath, undefined);
+  const privateFile = await send(baseUrl, `/api/media/file/${id}`, { cookie: memberCookie });
+  assert.equal(privateFile.status, 200);
+  assert.equal(privateFile.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await privateFile.arrayBuffer()), bytes);
+  assert.equal((await send(baseUrl, `/api/media/file/${id}`)).status, 401);
+
+  const anotherMember = await send(baseUrl, '/api/auth/signup', {
+    method: 'POST',
+    body: {
+      firstName: 'Other', lastName: 'Player', username: 'other.player',
+      email: 'other.player@example.com', phone: '+919876543211',
+      password: 'correct-horse-battery'
+    }
+  });
+  const otherCookie = anotherMember.headers.get('set-cookie').split(';')[0];
+  const sharedGallery = await (await send(baseUrl, '/api/media', { cookie: otherCookie })).json();
+  assert.equal(sharedGallery[0].id, id);
+  assert.equal((await send(baseUrl, `/api/media/file/${id}`, { cookie: otherCookie })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/media/${id}`, {
+    method: 'DELETE', headers: { cookie: otherCookie }
+  })).status, 403);
+
+  const adminLogin = await send(baseUrl, '/api/demo-admin-login', { method: 'POST' });
+  const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
+  const adminUpload = await fetch(`${baseUrl}/api/media?eventId=fixture-saturday`, {
+    method: 'POST',
+    headers: { cookie: adminCookie, 'content-type': 'video/mp4' },
+    body: bytes
+  });
+  assert.equal(adminUpload.status, 201);
+  assert.equal((await fetch(`${baseUrl}/api/media/${id}`, {
+    method: 'DELETE', headers: { cookie: adminCookie }
+  })).status, 200);
+  const adminMediaId = (await adminUpload.json()).id;
+  assert.equal((await fetch(`${baseUrl}/api/media/${adminMediaId}`, {
+    method: 'DELETE', headers: { cookie: adminCookie }
+  })).status, 200);
+
+  const ownerUpload = await fetch(`${baseUrl}/api/media?eventId=fixture-saturday`, {
+    method: 'POST',
+    headers: { cookie: memberCookie, 'content-type': 'image/jpeg' },
+    body: bytes
+  });
+  const ownerId = (await ownerUpload.json()).id;
+  assert.equal((await fetch(`${baseUrl}/api/media/${ownerId}`, {
+    method: 'DELETE', headers: { cookie: memberCookie }
+  })).status, 200);
+  assert.deepEqual(await (await send(baseUrl, '/api/media', { cookie: memberCookie })).json(), []);
+
+  const invalidType = await fetch(`${baseUrl}/api/media?eventId=fixture-saturday`, {
+    method: 'POST',
+    headers: { cookie: memberCookie, 'content-type': 'text/html' },
+    body: '<script>alert(1)</script>'
+  });
+  assert.equal(invalidType.status, 415);
+});
+
 test('production supports username/password signup, rate limits failures, and protects the configured admin', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'venpura-production-test-'));
   let storedState;

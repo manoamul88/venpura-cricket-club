@@ -51,3 +51,17 @@ $$;
 
 revoke all on function public.venpura_save_state(jsonb, integer) from public, anon, authenticated;
 grant execute on function public.venpura_save_state(jsonb, integer) to service_role;
+
+-- Keep match media private; the app serves files only after checking a member session.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'venpura-match-media',
+  'venpura-match-media',
+  false,
+  50000000,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm', 'video/quicktime']
+)
+on conflict (id) do update
+set public = false,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;

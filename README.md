@@ -20,6 +20,7 @@ The free hosting tiers can sleep or pause and are intended for a small team/demo
 
 1. This project is in the [VENPURA GitHub repository](https://github.com/manoamul88/venpura-cricket-club). Do **not** include `data/`, `.env`, passwords, or Supabase Secret keys in Git.
 2. Create a Supabase project. Open **SQL Editor**, paste and run [`supabase/schema.sql`](./supabase/schema.sql). In **Project Settings → API Keys**, copy the project URL and the server-only **Secret key** (it starts with `sb_secret_`). The app supports Supabase's newer secret key and legacy `service_role` key. Never use either secret in browser code or commit it.
+   For an existing deployment, run the updated schema in Supabase SQL Editor before deploying this version; it adds the private media-storage bucket without deleting club data.
 3. In Render, create a **Blueprint** and connect the GitHub repository containing this project. Render detects [`render.yaml`](./render.yaml) and creates the free Docker web service. Its Environment settings will ask for:
 
    - `VENPURA_ADMIN_USERNAME`: choose the captain’s username.
@@ -57,13 +58,14 @@ Local demo accounts:
 - **Contributions:** a ₹30 Saturday share for each player, a player-by-player paid/pending ledger, and admin payment-recording controls. Tournament entry fees are set on the fixture and tracked by player, too.
 - **Sunday match ball:** the upcoming Sunday buyer rotates alphabetically; a server-side, once-per-Monday job records an in-app reminder for that player.
 - **Admin desk:** administrators can publish Saturday, Sunday, and tournament fixtures. Each team member receives a fixture notification, visible in the app and in open app tabs.
+- **Match memories:** signed-in players can upload match-linked photos and videos up to 50 MB. The dashboard gallery is private to squad members; players can remove their own uploads, and the admin can remove any upload.
 - **Progressive web app:** app manifest, installable home-screen icon, responsive mobile navigation, and a cached app shell for faster reloads.
 - **VENPURA branding:** the supplied club crest is used across the app, sign-in screen, favicon, and install icons. The interface uses the crest's navy-and-gold palette with responsive, touch-friendly layouts.
 - **Optional score feed:** an integration hook for an administrator-selected JSON cricket-score endpoint.
 
 ## Storage and access
 
-The local demo stores club data in `data/venpura.json`, excluded from Git. In production the Node server uses Supabase PostgREST and the database function in [`supabase/schema.sql`](./supabase/schema.sql); it starts with an empty squad and creates the administrator from `VENPURA_ADMIN_USERNAME` and `VENPURA_ADMIN_PASSWORD`. The Supabase service-role key is only read by the server and its table is protected by row-level security. Revision-checked writes detect conflicting simultaneous updates instead of silently replacing another user's changes. Sessions use HTTP-only, same-site secure cookies over HTTPS; users sign in again after a hosting restart.
+The local demo stores club data in `data/venpura.json`, excluded from Git. In production the Node server uses Supabase PostgREST and the database function in [`supabase/schema.sql`](./supabase/schema.sql); it starts with an empty squad and creates the administrator from `VENPURA_ADMIN_USERNAME` and `VENPURA_ADMIN_PASSWORD`. Match media files are stored in a private Supabase Storage bucket and streamed only through authenticated app routes; only file metadata is kept with the team state. The Supabase service-role key is only read by the server and its table is protected by row-level security. Revision-checked writes detect conflicting simultaneous updates instead of silently replacing another user's changes. Sessions use HTTP-only, same-site secure cookies over HTTPS; users sign in again after a hosting restart.
 
 The “Pay” button records a payment in the demo ledger only. It does **not** collect money or initiate UPI, card, or bank transactions.
 

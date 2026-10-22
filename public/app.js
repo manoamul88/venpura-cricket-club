@@ -11,6 +11,7 @@ const state = {
   scorecards: [],
   availability: {},
   notifications: [],
+  media: [],
   liveScore: null,
   authMode: 'login',
   resetToken: new URLSearchParams(window.location.hash.slice(1)).get('token') || '',
@@ -109,6 +110,7 @@ async function refreshData({ preserveNotificationState = true } = {}) {
   state.scorecards = data.scorecards;
   state.availability = data.availability;
   state.notifications = data.notifications.filter(item => !item.memberId || item.memberId === state.user?.id);
+  state.media = data.currentUser ? await api('/api/media') : [];
   state.liveScore = data.liveScore;
 
   if (preserveNotificationState && previous.length) {
@@ -150,10 +152,11 @@ function renderSignIn() {
   root.innerHTML = `
     <main class="login-page">
       <div class="login-visual">
-        <div class="brand"><img class="brand-logo" src="/venpura-logo.png" alt="VENPURA Cricket Club"><span><span class="brand-name">VENPURA</span><span class="brand-sub">CRICKET CLUB · EST. EVERY SATURDAY</span></span></div>
+        <div class="brand"><img class="brand-logo" src="/venpura-logo.png" alt="VENPURA Cricket Club"><span><span class="brand-name">VENPURA</span><span class="brand-sub">CRICKET CLUB · EST. 2025</span></span></div>
         <div class="login-copy">
           <span class="eyebrow">ONE CLUB. ONE SQUAD.</span>
-          <h1>Good cricket.<br>Better company.</h1>
+          <h1>Deep passion.<br>Absolute focus.</h1>
+          <p class="login-united">United as one.</p>
           <p>Weekend match days, team dues, your squad’s numbers. A home for everything VENPURA.</p>
           <div class="login-perks"><span>▦ &nbsp; Find your next match</span><span>◉ &nbsp; Bring the whole squad</span><span>↗ &nbsp; Keep every run counted</span></div>
         </div>
@@ -365,7 +368,8 @@ function renderHome() {
         ${renderTournamentSummary(upcoming)}
         ${renderLiveScoreCard(upcoming.find(event => dateParts(event.date).date.getDay() === 6) || upcoming[0])}
       </div>
-    </div>`;
+    </div>
+    ${renderMatchMedia()}`;
 }
 
 function renderTournamentSummary(upcoming = sortedUpcoming()) {
@@ -382,6 +386,25 @@ function renderTournamentSummary(upcoming = sortedUpcoming()) {
 
 function renderLiveScoreCard(event) {
   return `<section class="card"><div class="card-header"><div><h2 class="card-title">Live scorecard</h2><p class="card-caption">Following your fixtures, wherever possible.</p></div><span class="badge badge-gray">LIVE DATA</span></div><div class="ball-duty"><p class="duty-note">${esc(state.liveScore?.message || 'No live data provider is connected.')}</p>${event ? `<button class="button button-small" data-action="live-score" data-event="${esc(event.id)}">Check this match</button>` : ''}</div></section>`;
+}
+
+function renderMatchMedia() {
+  const events = [...state.events].sort((a, b) => b.date.localeCompare(a.date));
+  const gallery = state.media.length ? `<div class="media-gallery">${state.media.map(item => {
+    const source = `/api/media/file/${encodeURIComponent(item.id)}`;
+    const preview = item.contentType.startsWith('video/')
+      ? `<video src="${source}" controls preload="metadata" aria-label="${esc(item.caption || `${item.eventTitle} video`)}"></video>`
+      : `<img src="${source}" alt="${esc(item.caption || `${item.eventTitle} photo`)}" loading="lazy">`;
+    const canDelete = state.isAdmin || item.memberId === state.user?.id;
+    return `<article class="media-card"><div class="media-preview">${preview}</div><div class="media-details"><strong>${esc(item.eventTitle)}${item.opponent ? ` vs ${esc(item.opponent)}` : ''}</strong><span>${esc(item.memberName)}${item.eventDate ? ` · ${esc(dateParts(item.eventDate).full)}` : ''}</span>${item.caption ? `<p>${esc(item.caption)}</p>` : ''}${canDelete ? `<button class="button button-small button-danger" data-action="delete-media" data-media="${esc(item.id)}">Remove</button>` : ''}</div></article>`;
+  }).join('')}</div>` : '<div class="empty-state">No match photos or videos yet. Share a moment from your next game.</div>';
+  return `<section class="card media-section"><div class="card-header"><div><h2 class="card-title">From the boundary</h2><p class="card-caption">Match photos and videos, shared with the squad.</p></div><span class="badge badge-gold">${state.media.length} SHARED</span></div>
+    <form id="media-upload-form" class="media-upload-form"><label class="field"><span class="field-label">Match *</span><select name="eventId" class="field-input" ${events.length ? 'required' : 'disabled'}><option value="">Choose a match</option>${events.map(item => `<option value="${esc(item.id)}">${esc(item.title)}${item.opponent ? ` vs ${esc(item.opponent)}` : ''} · ${esc(dateParts(item.date).full)}</option>`).join('')}</select></label>
+      <label class="field"><span class="field-label">Photo or video *</span><input class="field-input media-file-input" name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif,video/mp4,video/webm,video/quicktime" ${events.length ? 'required' : 'disabled'}></label>
+      <label class="field"><span class="field-label">Caption</span><input class="field-input" name="caption" maxlength="250" placeholder="A moment worth remembering"></label>
+      <button class="button button-primary media-upload-button" type="submit" ${events.length ? '' : 'disabled'}>Share with the team ↑</button>
+      <p class="field-help media-help">${events.length ? 'JPG, PNG, WebP, AVIF, MP4, WebM or MOV · up to 50 MB. Only signed-in squad members can view.' : 'Ask the admin to add a match before sharing media.'}</p>
+    </form>${gallery}</section>`;
 }
 
 function renderFixtures() {
@@ -670,6 +693,15 @@ document.addEventListener('click', async event => {
       toast('The team contribution ledger has been updated.');
       return;
     }
+    if (action === 'delete-media') {
+      if (!window.confirm('Remove this match photo or video for everyone?')) return;
+      button.disabled = true;
+      await api(`/api/media/${encodeURIComponent(button.dataset.media)}`, { method: 'DELETE' });
+      await refreshData();
+      renderShell();
+      toast('Match media removed.');
+      return;
+    }
     if (action === 'new-match') {
       state.activePage = 'admin';
       renderShell();
@@ -702,6 +734,30 @@ document.addEventListener('click', async event => {
 document.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target;
+  if (form.id === 'media-upload-form') {
+    const values = new FormData(form);
+    const file = values.get('file');
+    const button = form.querySelector('button[type="submit"]');
+    if (!(file instanceof File) || !file.size) return toast('Choose a photo or video to share.', true);
+    if (file.size > 50_000_000) return toast('Media must be smaller than 50 MB.', true);
+    button.disabled = true;
+    try {
+      const params = new URLSearchParams({
+        eventId: String(values.get('eventId') || ''),
+        caption: String(values.get('caption') || '')
+      });
+      await api(`/api/media?${params}`, {
+        method: 'POST', body: file, headers: { 'content-type': file.type }
+      });
+      await refreshData();
+      renderShell();
+      toast('Your match moment is now shared with the squad.');
+    } catch (error) {
+      toast(error.message, true);
+      button.disabled = false;
+    }
+    return;
+  }
   if (form.id === 'forgot-password-form') {
     const submit = form.querySelector('button[type="submit"]');
     submit.disabled = true;

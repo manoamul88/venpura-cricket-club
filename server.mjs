@@ -1,6 +1,6 @@
 import { createServer as nodeCreateServer } from 'node:http';
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +43,7 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
   if (!includeSamples) {
     return {
       members: [], events: [], payments: [], tournamentPayments: [], scorecards: [],
-      availability: {}, notifications: [], ballRemindersSent: []
+      availability: {}, notifications: [], ballRemindersSent: [], media: []
     };
   }
   const members = [
@@ -84,7 +84,7 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
     notifications: [
       { id: 'welcome-note', title: 'Welcome to VENPURA', message: 'Your club hub is ready. Confirm your spot for the next weekend fixture by Wednesday.', createdAt: new Date().toISOString(), read: false }
     ],
-    ballRemindersSent: []
+    ballRemindersSent: [], media: []
   };
 }
 
@@ -102,7 +102,8 @@ async function loadData(dataFile, seedOptions) {
       scorecards: Array.isArray(saved.scorecards) ? saved.scorecards : [],
       availability: saved.availability && typeof saved.availability === 'object' ? saved.availability : {},
       notifications: Array.isArray(saved.notifications) ? saved.notifications : base.notifications,
-      ballRemindersSent: Array.isArray(saved.ballRemindersSent) ? saved.ballRemindersSent : []
+      ballRemindersSent: Array.isArray(saved.ballRemindersSent) ? saved.ballRemindersSent : [],
+      media: Array.isArray(saved.media) ? saved.media : []
     };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
@@ -135,6 +136,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
       if (!response.ok) {
         throw new Error(`Supabase database read failed (${response.status}). Confirm the venpura_state table and service-role key: ${await response.text()}`);
       }
+
       const rows = await response.json();
       if (!Array.isArray(rows)) throw new Error('Supabase returned an invalid database response.');
       if (rows.length === 0) return { ...seedData(seedOptions), _revision: 0 };
@@ -158,6 +160,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
         availability: state.availability && typeof state.availability === 'object' ? state.availability : {},
         notifications: Array.isArray(state.notifications) ? state.notifications : base.notifications,
         ballRemindersSent: Array.isArray(state.ballRemindersSent) ? state.ballRemindersSent : [],
+        media: Array.isArray(state.media) ? state.media : [],
         _revision: revision
       };
     },
@@ -181,6 +184,71 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
       const newRevision = Number(await response.json());
       if (!Number.isInteger(newRevision)) throw new Error('Supabase saved the team, but returned an invalid database revision.');
       state._revision = newRevision;
+    }
+  };
+}
+
+function createSupabaseMediaStorage({ url, serviceRoleKey, fetchImpl = fetch }) {
+  const baseUrl = new URL(url);
+  const headers = {
+    apikey: serviceRoleKey,
+    ...(serviceRoleKey.startsWith('sb_secret_') ? {} : { authorization: `Bearer ${serviceRoleKey}` })
+  };
+  const objectUrl = objectPath => new URL(`/storage/v1/object/venpura-match-media/${objectPath}`, baseUrl);
+
+  async function check(response, action) {
+    if (!response.ok) throw new Error(`Supabase Storage ${action} failed (${response.status}): ${await response.text()}`);
+  }
+
+  return {
+    async upload(objectPath, bytes, contentType) {
+      const response = await fetchImpl(objectUrl(objectPath), {
+        method: 'POST',
+        headers: { ...headers, 'content-type': contentType, 'x-upsert': 'false' },
+        body: bytes,
+        signal: AbortSignal.timeout(60_000)
+      });
+      await check(response, 'upload');
+    },
+    async get(objectPath) {
+      const response = await fetchImpl(objectUrl(objectPath), {
+        headers, signal: AbortSignal.timeout(30_000)
+      });
+      await check(response, 'download');
+      return Buffer.from(await response.arrayBuffer());
+    },
+    async remove(objectPath) {
+      const response = await fetchImpl(new URL('/storage/v1/object/venpura-match-media', baseUrl), {
+        method: 'DELETE',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ prefixes: [objectPath] }),
+        signal: AbortSignal.timeout(30_000)
+      });
+      await check(response, 'delete');
+    }
+  };
+}
+
+function createLocalMediaStorage(dataFile) {
+  const directory = `${dataFile}.media`;
+  function filePath(objectPath) {
+    const resolved = path.resolve(directory, objectPath);
+    if (!resolved.startsWith(`${path.resolve(directory)}${path.sep}`)) throw new Error('Invalid media path.');
+    return resolved;
+  }
+  return {
+    async upload(objectPath, bytes) {
+      const target = filePath(objectPath);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, bytes, { flag: 'wx' });
+    },
+    get(objectPath) {
+      return readFile(filePath(objectPath));
+    },
+    async remove(objectPath) {
+      try { await unlink(filePath(objectPath)); } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
     }
   };
 }
@@ -322,6 +390,7 @@ async function readBody(request) {
       error.status = 413;
       throw error;
     }
+
   }
   try {
     return raw ? JSON.parse(raw) : {};
@@ -330,6 +399,26 @@ async function readBody(request) {
     error.status = 400;
     throw error;
   }
+}
+
+async function readBinaryBody(request, maxBytes) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maxBytes) {
+      const error = new Error(`Media must be smaller than ${Math.floor(maxBytes / 1_000_000)} MB.`);
+      error.status = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  if (!size) {
+    const error = new Error('Choose a photo or video before uploading.');
+    error.status = 400;
+    throw error;
+  }
+  return Buffer.concat(chunks, size);
 }
 
 function validateWeekendDay(date) {
@@ -350,6 +439,7 @@ function createAppServer({
   supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
   sendPasswordResetEmail = createPasswordResetEmailSender(),
   storage,
+  mediaStorage,
   now = () => new Date()
 } = {}) {
   if (nodeEnv === 'production' && (!/^[a-z0-9._-]{3,30}$/i.test(adminUsername) || adminPassword.length < 12)) {
@@ -367,6 +457,9 @@ function createAppServer({
       load: seedOptions => loadData(dataFile, seedOptions),
       save: data => saveData(dataFile, data)
     });
+  const mediaStore = mediaStorage || (supabaseUrl && supabaseServiceRoleKey
+    ? createSupabaseMediaStorage({ url: supabaseUrl, serviceRoleKey: supabaseServiceRoleKey })
+    : createLocalMediaStorage(dataFile));
   const sessions = new Map();
   const loginAttempts = new Map();
   const signupAttempts = new Map();
@@ -378,6 +471,7 @@ function createAppServer({
     if (pathname.startsWith('/api/')) {
       try {
         const data = await dataStore.load(dataOptions);
+        if (!Array.isArray(data.media)) data.media = [];
         if (nodeEnv === 'production') {
           const credential = await adminCredential;
           let admin = data.members.find(member => normalizeUsername(member.username) === configuredAdminUsername);
@@ -441,6 +535,77 @@ function createAppServer({
               available: false, provider: null, message: 'Live scores are optional. Cricket Heroes does not publish a verified public API; add a licensed cricket data API to enable them.'
             }
           });
+        }
+        if (request.method === 'GET' && pathname === '/api/media') {
+          if (!requireUser()) return;
+          const media = data.media.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 24);
+          return respond(200, media.map(item => {
+            const event = data.events.find(match => match.id === item.eventId);
+            const member = data.members.find(player => player.id === item.memberId);
+            return {
+              id: item.id, eventId: item.eventId, memberId: item.memberId,
+              memberName: member?.name || 'Former team member',
+              caption: item.caption, contentType: item.contentType, byteSize: item.byteSize,
+              createdAt: item.createdAt, eventTitle: event?.title || 'Match',
+              eventDate: event?.date || '', opponent: event?.opponent || ''
+            };
+          }));
+        }
+        const mediaFileMatch = pathname.match(/^\/api\/media\/file\/([a-f0-9-]+)$/i);
+        if (request.method === 'GET' && mediaFileMatch) {
+          if (!requireUser()) return;
+          const item = data.media.find(media => media.id === mediaFileMatch[1]);
+          if (!item) return respond(404, { error: 'This match photo or video could not be found.' });
+          const bytes = await mediaStore.get(item.objectPath);
+          response.writeHead(200, securityHeaders({
+            'content-type': item.contentType,
+            'content-length': bytes.length,
+            'content-disposition': 'inline',
+            'cache-control': 'private, no-store'
+          }));
+          return response.end(bytes);
+        }
+        if (request.method === 'POST' && pathname === '/api/media') {
+          if (!requireUser()) return;
+          const eventId = String(url.searchParams.get('eventId') || '');
+          const event = data.events.find(item => item.id === eventId);
+          if (!event) return respond(404, { error: 'Choose a match on the calendar before uploading.' });
+          const contentType = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+          const extensions = {
+            'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif',
+            'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov'
+          };
+          if (!extensions[contentType]) return respond(415, { error: 'Upload a JPG, PNG, WebP, AVIF, MP4, WebM, or MOV file.' });
+          const bytes = await readBinaryBody(request, 50_000_000);
+          const id = randomBytes(16).toString('hex');
+          const objectPath = `${eventId}/${id}.${extensions[contentType]}`;
+          const caption = String(url.searchParams.get('caption') || '').trim().slice(0, 250);
+          await mediaStore.upload(objectPath, bytes, contentType);
+          const item = {
+            id, eventId, memberId: currentUser.id, objectPath, contentType,
+            byteSize: bytes.length, caption, createdAt: now().toISOString()
+          };
+          data.media.unshift(item);
+          try {
+            await dataStore.save(data);
+          } catch (error) {
+            try { await mediaStore.remove(objectPath); } catch (cleanupError) {
+              console.error(`Could not clean up an unregistered VENPURA media upload: ${cleanupError.message}`);
+            }
+            throw error;
+          }
+          return respond(201, { id });
+        }
+        const mediaMatch = pathname.match(/^\/api\/media\/([a-f0-9]{32})$/i);
+        if (request.method === 'DELETE' && mediaMatch) {
+          if (!requireUser()) return;
+          const item = data.media.find(media => media.id === mediaMatch[1]);
+          if (!item) return respond(404, { error: 'This match photo or video could not be found.' });
+          if (!isAdmin && item.memberId !== currentUser.id) return respond(403, { error: 'You can only remove your own uploads.' });
+          await mediaStore.remove(item.objectPath);
+          data.media = data.media.filter(media => media.id !== item.id);
+          await dataStore.save(data);
+          return respond(200, { ok: true });
         }
         if (request.method === 'POST' && pathname === '/api/demo-login') {
           if (nodeEnv === 'production') return respond(404, { error: 'Demo login is disabled in production.' });
