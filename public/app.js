@@ -13,6 +13,7 @@ const state = {
   notifications: [],
   liveScore: null,
   authMode: 'login',
+  resetToken: new URLSearchParams(window.location.hash.slice(1)).get('token') || '',
   adminLogin: false,
   lastNotificationIds: new Set(),
   paymentFilter: 'all'
@@ -144,6 +145,8 @@ function navButton([id, icon, label], mobile = false) {
 
 function renderSignIn() {
   const isSignup = state.authMode === 'signup';
+  const isForgot = state.authMode === 'forgot';
+  const isReset = state.authMode === 'reset';
   root.innerHTML = `
     <main class="login-page">
       <div class="login-visual">
@@ -159,14 +162,29 @@ function renderSignIn() {
       <section class="login-panel">
         <div class="login-card">
           <div class="modal-logo"><span class="brand-mark">V</span> VENPURA</div>
-          <div class="step-indicator">${state.adminLogin ? 'ADMINISTRATOR SIGN IN' : isSignup ? 'JOIN THE SQUAD' : 'MEMBER SIGN IN'}</div>
-          <h2>${state.adminLogin ? 'Captain, welcome back.' : isSignup ? 'Welcome to the team.' : 'Good to see you.'}</h2>
-          <p class="login-description">${state.adminLogin ? 'Sign in with the administrator username and password configured for your cloud app.' : isSignup ? 'Create your player account with a username and password. No phone verification or SMS is needed.' : 'Sign in to your VENPURA account. No OTP or text message required.'}</p>
-          <form id="login-form">
+          <div class="step-indicator">${isReset || isForgot ? 'PASSWORD RECOVERY' : state.adminLogin ? 'ADMINISTRATOR SIGN IN' : isSignup ? 'JOIN THE SQUAD' : 'MEMBER SIGN IN'}</div>
+          <h2>${isReset ? 'Choose a new password.' : isForgot ? 'Reset your password.' : state.adminLogin ? 'Captain, welcome back.' : isSignup ? 'Welcome to the team.' : 'Good to see you.'}</h2>
+          <p class="login-description">${isReset ? 'Choose a new password for your VENPURA account.' : isForgot ? 'Enter the email address on your account. If it matches, we’ll email you a secure reset link.' : state.adminLogin ? 'Sign in with the administrator username and password configured for your cloud app.' : isSignup ? 'Create your player account. Your mobile number and email help the club stay in touch and let you recover your password by email.' : 'Sign in to your VENPURA account.'}</p>
+          <form id="forgot-password-form" ${isForgot ? '' : 'hidden'}>
+            <div class="field-grid"><label class="field field-wide"><span class="field-label">Account email</span><input class="field-input" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com"></label></div>
+            <div id="forgot-message"></div>
+            <button class="button button-primary login-submit" type="submit">Email me a reset link →</button>
+          </form>
+          <form id="reset-password-form" ${isReset ? '' : 'hidden'}>
+            <div class="field-grid">
+              <label class="field field-wide"><span class="field-label">New password (12 or more characters)</span><input class="field-input" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required placeholder="Create a strong password"></label>
+              <label class="field field-wide"><span class="field-label">Confirm new password</span><input class="field-input" name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required placeholder="Enter the same password again"></label>
+            </div>
+            <div id="reset-message"></div>
+            <button class="button button-primary login-submit" type="submit">Save new password →</button>
+          </form>
+          <form id="login-form" ${isForgot || isReset ? 'hidden' : ''}>
             <div class="field-grid">
               ${isSignup ? `
                 <label class="field"><span class="field-label">First name *</span><input class="field-input" name="firstName" autocomplete="given-name" required placeholder="e.g. Kavin"></label>
                 <label class="field"><span class="field-label">Last name *</span><input class="field-input" name="lastName" autocomplete="family-name" required placeholder="e.g. Nair"></label>
+                <label class="field field-wide"><span class="field-label">Email address *</span><input class="field-input" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com"></label>
+                <label class="field field-wide"><span class="field-label">Mobile number *</span><input class="field-input" name="phone" type="tel" autocomplete="tel" inputmode="tel" required placeholder="+91 98765 43210"></label>
               ` : ''}
               <label class="field field-wide"><span class="field-label">Username</span><input class="field-input" name="username" autocomplete="username" minlength="3" maxlength="30" required placeholder="${state.adminLogin ? 'Administrator username' : 'Your team username'}"></label>
               <label class="field field-wide"><span class="field-label">Password ${isSignup ? '(12 or more characters)' : ''}</span><input class="field-input" name="password" type="password" autocomplete="${isSignup ? 'new-password' : 'current-password'}" minlength="${isSignup ? 12 : 1}" maxlength="128" required placeholder="${isSignup ? 'Create a strong password' : 'Your password'}"></label>
@@ -174,14 +192,15 @@ function renderSignIn() {
             <div id="login-message"></div>
             <button class="button button-primary login-submit" type="submit">${state.adminLogin ? 'Sign in as administrator →' : isSignup ? 'Create player account →' : 'Sign in →'}</button>
           </form>
-          ${!state.adminLogin ? `<button type="button" class="text-link login-back" data-action="toggle-auth">${isSignup ? 'Already on the team? Sign in' : 'New to VENPURA? Create an account'}</button>` : ''}
-          ${state.demoAllowed ? `<div class="demo-login-card"><span><strong>Just having a look?</strong><small>Explore the sample team or demo admin.</small></span><div class="demo-buttons"><button type="button" class="button button-soft button-small" data-action="demo-login">Explore demo →</button><button type="button" class="button button-small" data-action="demo-admin-login">Admin →</button></div></div>` : state.adminLogin ? '<p class="auth-notice">The administrator username and password are stored as private cloud-server environment variables.</p>' : '<p class="auth-notice">Create your account with a unique username and a strong password. No SMS or phone number required.</p>'}
+          ${isForgot || isReset ? '<button type="button" class="text-link login-back" data-action="auth-login">Back to sign in</button>' : !state.adminLogin ? `${isSignup ? '<button type="button" class="text-link login-back" data-action="toggle-auth">Already on the team? Sign in</button>' : '<button type="button" class="text-link login-back" data-action="forgot-password">Forgot password?</button><button type="button" class="text-link login-back" data-action="toggle-auth">New to VENPURA? Create an account</button>'}` : ''}
+          ${state.demoAllowed && !isForgot && !isReset ? `<div class="demo-login-card"><span><strong>Just having a look?</strong><small>Explore the sample team or demo admin.</small></span><div class="demo-buttons"><button type="button" class="button button-soft button-small" data-action="demo-login">Explore demo →</button><button type="button" class="button button-small" data-action="demo-admin-login">Admin →</button></div></div>` : state.adminLogin ? '<p class="auth-notice">The administrator password is managed in Render settings. Ask the app administrator to update it if you forget it.</p>' : isSignup ? '<p class="auth-notice">Email is used for password recovery. Your mobile number is saved privately and is not shown to other players.</p>' : ''}
         </div>
       </section>
     </main>`;
 }
 
 function renderShell() {
+  if (state.resetToken && state.authMode === 'reset') return renderSignIn();
   if (!state.user) return renderSignIn();
   const [eyebrow, title, subtitle] = pageInfo[state.activePage] || pageInfo.home;
   const unread = state.notifications.filter(item => !item.read).length;
@@ -536,6 +555,8 @@ function openProfile() {
     <form id="profile-form"><div class="field-grid">
       <label class="field"><span class="field-label">First name *</span><input name="firstName" class="field-input" required value="${esc(state.user.firstName)}"></label>
       <label class="field"><span class="field-label">Last name *</span><input name="lastName" class="field-input" required value="${esc(state.user.lastName)}"></label>
+      <label class="field field-wide"><span class="field-label">Email address *</span><input name="email" type="email" autocomplete="email" maxlength="254" class="field-input" required value="${esc(state.user.email)}"></label>
+      <label class="field field-wide"><span class="field-label">Mobile number *</span><input name="phone" type="tel" autocomplete="tel" inputmode="tel" class="field-input" required value="${esc(state.user.phone)}"></label>
       <label class="field field-wide"><span class="field-label">Your cricket role</span><select name="role" class="field-input">
         ${[['bowler','Bowler'],['batter','Batter'],['all-rounder','All Rounder'],['wicket keeper','Wicket Keeper']].map(([value,label]) => `<option value="${value}" ${state.user.role === value ? 'selected' : ''}>${label}</option>`).join('')}
       </select></label>
@@ -583,6 +604,19 @@ document.addEventListener('click', async event => {
     if (action === 'toggle-auth') {
       state.adminLogin = false;
       state.authMode = state.authMode === 'signup' ? 'login' : 'signup';
+      renderSignIn();
+      return;
+    }
+    if (action === 'forgot-password') {
+      state.adminLogin = false;
+      state.authMode = 'forgot';
+      renderSignIn();
+      return;
+    }
+    if (action === 'auth-login') {
+      state.authMode = 'login';
+      state.resetToken = '';
+      window.history.replaceState({}, '', '/');
       renderSignIn();
       return;
     }
@@ -668,6 +702,48 @@ document.addEventListener('click', async event => {
 document.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target;
+  if (form.id === 'forgot-password-form') {
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      const result = await api('/api/auth/forgot-password', {
+        method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form)))
+      });
+      const message = document.querySelector('#forgot-message');
+      message.innerHTML = `<div class="auth-notice">${esc(result.message)}</div>`;
+    } catch (error) {
+      const message = document.querySelector('#forgot-message');
+      message.innerHTML = `<div class="auth-notice login-error">${esc(error.message)}</div>`;
+    } finally {
+      submit.disabled = false;
+    }
+  }
+  if (form.id === 'reset-password-form') {
+    const values = Object.fromEntries(new FormData(form));
+    const submit = form.querySelector('button[type="submit"]');
+    if (values.password !== values.confirmPassword) {
+      const message = document.querySelector('#reset-message');
+      message.innerHTML = '<div class="auth-notice login-error">The passwords do not match. Please enter them again.</div>';
+      return;
+    }
+    submit.disabled = true;
+    try {
+      const result = await api('/api/auth/reset-password', {
+        method: 'POST', body: JSON.stringify({ token: state.resetToken, password: values.password })
+      });
+      state.authMode = 'login';
+      state.resetToken = '';
+      window.history.replaceState({}, '', '/');
+      renderSignIn();
+      updateLoginNotice(result.message);
+    } catch (error) {
+      const message = document.querySelector('#reset-message');
+      message.innerHTML = `<div class="auth-notice login-error">${esc(error.message)}</div>`;
+    } finally {
+      const currentSubmit = document.querySelector('#reset-password-form button[type="submit"]');
+      if (currentSubmit) currentSubmit.disabled = false;
+    }
+  }
   if (form.id === 'login-form') {
     const values = Object.fromEntries(new FormData(form));
     const submit = form.querySelector('button[type="submit"]');
@@ -752,8 +828,9 @@ document.addEventListener('keydown', event => {
 
 async function start() {
   try {
+    if (state.resetToken) state.authMode = 'reset';
     await refreshData({ preserveNotificationState: false });
-    if (!state.user && state.demoAllowed) {
+    if (!state.user && state.demoAllowed && !state.resetToken) {
       await api('/api/demo-login', { method: 'POST' });
       await refreshData({ preserveNotificationState: false });
     }

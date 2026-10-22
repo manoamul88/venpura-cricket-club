@@ -1,4 +1,4 @@
-const CACHE = 'venpura-shell-v2';
+const CACHE = 'venpura-shell-v3';
 const APP_SHELL = ['/', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', event => {
@@ -12,7 +12,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname === '/reset-password' || url.searchParams.has('token')) return;
   event.respondWith(fetch(event.request).then(response => {
     if (response.ok) caches.open(CACHE).then(cache => cache.put(event.request, response.clone()));
     return response;

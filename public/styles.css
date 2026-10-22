@@ -239,7 +239,7 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; }
 .phone-field > span { display:flex; min-height:38px; align-items:center; padding:0 10px; border:1px solid #e4e7e1; border-radius:7px; background:#fafbf8; color:#49584e; font-size:11px; white-space:nowrap; }
 .phone-field .field-input { min-width:0; }
 .login-submit { width:100%; min-height:43px; margin-top:16px; font-size:11px; }
-.login-back { margin-top:14px; padding:0; }
+.login-back { display:block; margin-top:14px; padding:0; }
 .demo-login-card { display:flex; align-items:center; justify-content:space-between; gap:9px; margin-top:19px; padding:12px; border:1px solid var(--line); border-radius:9px; }
 .demo-login-card strong,.demo-login-card small { display:block; }
 .demo-login-card strong { font-size:10px; }

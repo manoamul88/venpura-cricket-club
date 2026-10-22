@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -167,6 +168,7 @@ test('availability closes after Wednesday and Monday ball reminders rotate alpha
 test('production supports username/password signup, rate limits failures, and protects the configured admin', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'venpura-production-test-'));
   let storedState;
+  const resetEmails = [];
   const storage = {
     async load(options) {
       return storedState ? structuredClone(storedState) : { ...seedData(options), _revision: 0 };
@@ -179,6 +181,7 @@ test('production supports username/password signup, rate limits failures, and pr
     nodeEnv: 'production',
     adminUsername: 'captain',
     adminPassword: 'correct-horse-battery',
+    sendPasswordResetEmail: async email => resetEmails.push(email),
     storage
   });
   await new Promise(resolve => application.listen(0, '127.0.0.1', resolve));
@@ -206,32 +209,70 @@ test('production supports username/password signup, rate limits failures, and pr
 
   const signedUp = await send(baseUrl, '/api/auth/signup', {
     method: 'POST',
-    body: { username: 'player.one', password: 'a-very-secure-password', firstName: 'Player', lastName: 'One' }
+    body: {
+      username: 'player.one', password: 'a-very-secure-password', firstName: 'Player', lastName: 'One',
+      email: 'player@example.com', phone: '98765 43210'
+    }
   });
   assert.equal(signedUp.status, 201);
   const signupResult = await signedUp.json();
   assert.equal(signupResult.isAdmin, false);
   assert.equal(signupResult.user.passwordHash, undefined);
   assert.equal(signupResult.user.username, 'player.one');
+  assert.equal(signupResult.user.email, 'player@example.com');
+  assert.equal(signupResult.user.phone, '+919876543210');
   const storedMember = storedState.members.find(member => member.username === 'player.one');
   assert.ok(storedMember.passwordSalt);
   assert.ok(storedMember.passwordHash);
   assert.notEqual(storedMember.passwordHash, 'a-very-secure-password');
   const memberCookie = signedUp.headers.get('set-cookie').split(';')[0];
+  const memberBootstrap = await (await send(baseUrl, '/api/bootstrap', { cookie: memberCookie })).json();
+  assert.equal(memberBootstrap.members.find(member => member.username === 'player.one').email, undefined);
+  assert.equal(memberBootstrap.currentUser.email, 'player@example.com');
   assert.equal((await send(baseUrl, '/api/matches', {
     method: 'POST', cookie: memberCookie,
     body: { date: '2026-10-31', opponent: 'Rivals XI', venue: 'Oval' }
   })).status, 403);
 
+  const unknownReset = await send(baseUrl, '/api/auth/forgot-password', {
+    method: 'POST', body: { email: 'unknown@example.com' }
+  });
+  assert.equal(unknownReset.status, 200);
+  assert.equal((await unknownReset.json()).message, 'If an account exists for that email, password reset instructions have been sent.');
+  assert.equal(resetEmails.length, 0);
+
+  const resetRequest = await send(baseUrl, '/api/auth/forgot-password', {
+    method: 'POST', body: { email: 'PLAYER@example.com' }
+  });
+  assert.equal(resetRequest.status, 200);
+  assert.equal(resetEmails.length, 1);
+  assert.equal(resetEmails[0].to, 'player@example.com');
+  const memberAfterResetRequest = storedState.members.find(member => member.username === 'player.one');
+  assert.equal(memberAfterResetRequest.passwordResetTokenHash, createHash('sha256').update(resetEmails[0].token).digest('hex'));
+  assert.equal(memberAfterResetRequest.passwordResetTokenHash.includes(resetEmails[0].token), false);
+
+  const resetPassword = await send(baseUrl, '/api/auth/reset-password', {
+    method: 'POST', body: { token: resetEmails[0].token, password: 'a-new-secure-password' }
+  });
+  assert.equal(resetPassword.status, 200);
+  assert.equal(storedState.members.find(member => member.username === 'player.one').passwordResetTokenHash, undefined);
+  assert.equal((await (await send(baseUrl, '/api/bootstrap', { cookie: memberCookie })).json()).currentUser, null);
+  assert.equal((await send(baseUrl, '/api/auth/reset-password', {
+    method: 'POST', body: { token: resetEmails[0].token, password: 'another-secure-password' }
+  })).status, 400);
+
   const memberLogin = await send(baseUrl, '/api/auth/login', {
-    method: 'POST', body: { username: 'PLAYER.ONE', password: 'a-very-secure-password' }
+    method: 'POST', body: { username: 'PLAYER.ONE', password: 'a-new-secure-password' }
   });
   assert.equal(memberLogin.status, 200);
   assert.equal((await memberLogin.json()).isAdmin, false);
 
   const duplicateUsername = await send(baseUrl, '/api/auth/signup', {
     method: 'POST',
-    body: { username: 'player.one', password: 'a-very-secure-password', firstName: 'Another', lastName: 'Player' }
+    body: {
+      username: 'player.one', password: 'a-very-secure-password', firstName: 'Another', lastName: 'Player',
+      email: 'another@example.com', phone: '98765 43211'
+    }
   });
   assert.equal(duplicateUsername.status, 409);
 
@@ -242,7 +283,7 @@ test('production supports username/password signup, rate limits failures, and pr
     assert.equal(wrongPassword.status, 401);
   }
   const lockedLogin = await send(baseUrl, '/api/auth/login', {
-    method: 'POST', body: { username: 'player.one', password: 'a-very-secure-password' }
+    method: 'POST', body: { username: 'player.one', password: 'a-new-secure-password' }
   });
   assert.equal(lockedLogin.status, 429);
 });

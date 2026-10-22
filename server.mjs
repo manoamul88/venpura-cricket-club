@@ -1,9 +1,10 @@
 import { createServer as nodeCreateServer } from 'node:http';
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import nodemailer from 'nodemailer';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(root, 'public');
@@ -184,13 +185,59 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
   };
 }
 
-function publicMember(member) {
-  const { passwordSalt, passwordHash, isAdmin, ...publicData } = member;
-  return publicData;
+function publicMember(member, includeContact = false) {
+  const { passwordSalt, passwordHash, passwordResetTokenHash, passwordResetExpiresAt, isAdmin, email, phone, ...publicData } = member;
+  return { ...publicData, ...(includeContact ? { email, phone } : {}) };
 }
 
 function normalizeUsername(value) {
   return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeEmail(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizePhone(value) {
+  const input = String(value ?? '').trim();
+  if (!/^[+()\-\s\d]+$/.test(input)) return '';
+  let digits = input.replace(/\D/g, '');
+  if (!input.startsWith('+') && digits.length === 10) digits = `91${digits}`;
+  else if (!input.startsWith('+') && digits.length === 11 && digits.startsWith('0')) digits = `91${digits.slice(1)}`;
+  return digits.length >= 8 && digits.length <= 15 && !digits.startsWith('0') ? `+${digits}` : '';
+}
+
+function validEmail(value) {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function createPasswordResetEmailSender() {
+  let transporter;
+  return async ({ to, token }) => {
+    const { SMTP_HOST, SMTP_PORT = '465', SMTP_SECURE = 'true', SMTP_USER, SMTP_PASSWORD, SMTP_FROM, PUBLIC_APP_URL } = process.env;
+    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD || !SMTP_FROM || !PUBLIC_APP_URL) {
+      throw new Error('Email recovery is not configured. Add the SMTP and PUBLIC_APP_URL settings in Render.');
+    }
+    const appUrl = new URL(PUBLIC_APP_URL);
+    if (process.env.NODE_ENV === 'production' && appUrl.protocol !== 'https:') {
+      throw new Error('PUBLIC_APP_URL must use HTTPS for secure password recovery.');
+    }
+    const resetUrl = new URL('/reset-password', appUrl);
+    resetUrl.hash = `token=${token}`;
+    transporter ||= nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT),
+      secure: SMTP_SECURE === 'true',
+      auth: { user: SMTP_USER, pass: SMTP_PASSWORD }
+    });
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: 'Reset your VENPURA password',
+      text: `A password reset was requested for your VENPURA account. Use this link within 30 minutes:\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
+      html: `<p>A password reset was requested for your VENPURA account.</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in 30 minutes. If you did not request this, you can ignore this email.</p>`
+    });
+  };
 }
 
 async function hashPassword(password, salt) {
@@ -301,6 +348,7 @@ function createAppServer({
   adminPassword = process.env.VENPURA_ADMIN_PASSWORD || '',
   supabaseUrl = process.env.SUPABASE_URL,
   supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  sendPasswordResetEmail = createPasswordResetEmailSender(),
   storage,
   now = () => new Date()
 } = {}) {
@@ -322,6 +370,7 @@ function createAppServer({
   const sessions = new Map();
   const loginAttempts = new Map();
   const signupAttempts = new Map();
+  const passwordResetAttempts = new Map();
 
   async function handler(request, response) {
     const url = new URL(request.url, 'http://localhost');
@@ -375,10 +424,10 @@ function createAppServer({
         }
         if (request.method === 'GET' && pathname === '/api/bootstrap') {
           return respond(200, {
-            currentUser: currentUser ? publicMember(currentUser) : null,
+            currentUser: currentUser ? publicMember(currentUser, true) : null,
             demoAllowed: nodeEnv !== 'production',
             isAdmin: Boolean(isAdmin),
-            members: currentUser ? data.members.map(publicMember) : [],
+            members: currentUser ? data.members.map(member => publicMember(member)) : [],
             events: currentUser ? data.events : [],
             payments: currentUser ? data.payments : [],
             tournamentPayments: currentUser ? data.tournamentPayments : [],
@@ -413,6 +462,8 @@ function createAppServer({
           const firstName = String(body.firstName || '').trim();
           const lastName = String(body.lastName || '').trim();
           const username = normalizeUsername(body.username);
+          const email = normalizeEmail(body.email);
+          const phone = normalizePhone(body.phone);
           const password = String(body.password || '');
           const remoteKey = request.socket.remoteAddress || 'unknown';
           const timestamp = now().getTime();
@@ -425,14 +476,18 @@ function createAppServer({
           if (!/^[a-z0-9._-]{3,30}$/i.test(username)) return respond(400, { error: 'Choose a username using 3–30 letters, numbers, dots, dashes, or underscores.' });
           if (password.length < 12 || password.length > 128) return respond(400, { error: 'Use a password between 12 and 128 characters.' });
           if (!firstName || !lastName) return respond(400, { error: 'First name and last name are both required.' });
+          if (!validEmail(email)) return respond(400, { error: 'Enter a valid email address for password recovery.' });
+          if (!phone) return respond(400, { error: 'Enter a valid mobile number, including country code if outside India.' });
           if (data.members.some(member => normalizeUsername(member.username) === username)) {
             return respond(409, { error: 'That username is already taken. Choose another one.' });
           }
+          if (data.members.some(member => normalizeEmail(member.email) === email)) return respond(409, { error: 'That email address is already linked to an account.' });
+          if (data.members.some(member => normalizePhone(member.phone) === phone)) return respond(409, { error: 'That mobile number is already linked to an account.' });
           const credential = await hashPassword(password);
           signupLimiter.count += 1;
           signupAttempts.set(remoteKey, signupLimiter);
           const member = {
-            id: `m-${randomBytes(8).toString('hex')}`, username, firstName, lastName,
+            id: `m-${randomBytes(8).toString('hex')}`, username, firstName, lastName, email, phone,
             name: `${firstName} ${lastName}`, role: 'all-rounder', matches: 0, average: 0, wickets: 0, runs: 0,
             ...credential
           };
@@ -440,9 +495,58 @@ function createAppServer({
           await dataStore.save(data);
           const token = randomBytes(32).toString('hex');
           sessions.set(token, member.id);
-          return respond(201, { user: publicMember(member), isAdmin: false }, {
+          return respond(201, { user: publicMember(member, true), isAdmin: false }, {
             'set-cookie': `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${nodeEnv === 'production' ? '; Secure' : ''}`
           });
+        }
+        if (request.method === 'POST' && pathname === '/api/auth/forgot-password') {
+          const body = await readBody(request);
+          const email = normalizeEmail(body.email);
+          if (!validEmail(email)) return respond(400, { error: 'Enter the email address used for your VENPURA account.' });
+          const remoteKey = request.socket.remoteAddress || 'unknown';
+          const timestamp = now().getTime();
+          const limiter = passwordResetAttempts.get(remoteKey) || { count: 0, windowStartedAt: timestamp };
+          if (timestamp - limiter.windowStartedAt >= 60 * 60_000) {
+            limiter.count = 0;
+            limiter.windowStartedAt = timestamp;
+          }
+          if (limiter.count >= 5) return respond(429, { error: 'Too many reset requests. Please try again in an hour.' });
+          limiter.count += 1;
+          passwordResetAttempts.set(remoteKey, limiter);
+          const member = data.members.find(item => !item.isAdmin && normalizeEmail(item.email) === email);
+          if (member) {
+            const token = randomBytes(32).toString('hex');
+            member.passwordResetTokenHash = createHash('sha256').update(token).digest('hex');
+            member.passwordResetExpiresAt = new Date(timestamp + 30 * 60_000).toISOString();
+            await dataStore.save(data);
+            try {
+              await sendPasswordResetEmail({ to: email, token });
+            } catch (error) {
+              delete member.passwordResetTokenHash;
+              delete member.passwordResetExpiresAt;
+              await dataStore.save(data);
+              throw error;
+            }
+          }
+          return respond(200, { message: 'If an account exists for that email, password reset instructions have been sent.' });
+        }
+        if (request.method === 'POST' && pathname === '/api/auth/reset-password') {
+          const body = await readBody(request);
+          const token = String(body.token || '');
+          const password = String(body.password || '');
+          if (!/^[a-f0-9]{64}$/i.test(token)) return respond(400, { error: 'This reset link is invalid or has expired. Request a new one.' });
+          if (password.length < 12 || password.length > 128) return respond(400, { error: 'Use a password between 12 and 128 characters.' });
+          const tokenHash = createHash('sha256').update(token).digest('hex');
+          const member = data.members.find(item => !item.isAdmin && item.passwordResetTokenHash === tokenHash);
+          if (!member || !member.passwordResetExpiresAt || new Date(member.passwordResetExpiresAt).getTime() <= now().getTime()) {
+            return respond(400, { error: 'This reset link is invalid or has expired. Request a new one.' });
+          }
+          Object.assign(member, await hashPassword(password));
+          delete member.passwordResetTokenHash;
+          delete member.passwordResetExpiresAt;
+          await dataStore.save(data);
+          for (const [sessionToken, memberId] of sessions) if (memberId === member.id) sessions.delete(sessionToken);
+          return respond(200, { message: 'Your password was changed. Sign in with your new password.' });
         }
         if (request.method === 'POST' && pathname === '/api/auth/login') {
           const body = await readBody(request);
@@ -465,7 +569,7 @@ function createAppServer({
           loginAttempts.delete(remoteKey);
           const token = randomBytes(32).toString('hex');
           sessions.set(token, member.id);
-          return respond(200, { user: publicMember(member), isAdmin: Boolean(member.isAdmin) }, {
+          return respond(200, { user: publicMember(member, true), isAdmin: Boolean(member.isAdmin) }, {
             'set-cookie': `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${nodeEnv === 'production' ? '; Secure' : ''}`
           });
         }
@@ -480,14 +584,22 @@ function createAppServer({
           const firstName = String(body.firstName || '').trim();
           const lastName = String(body.lastName || '').trim();
           const role = String(body.role || '').trim().toLowerCase();
+          const email = normalizeEmail(body.email);
+          const phone = normalizePhone(body.phone);
           if (!firstName || !lastName) return respond(400, { error: 'First name and last name are both required.' });
+          if (!validEmail(email)) return respond(400, { error: 'Enter a valid email address for password recovery.' });
+          if (!phone) return respond(400, { error: 'Enter a valid mobile number, including country code if outside India.' });
           if (!['bowler', 'batter', 'all-rounder', 'wicket keeper'].includes(role)) return respond(400, { error: 'Choose a valid cricket role.' });
+          if (data.members.some(member => member.id !== currentUser.id && normalizeEmail(member.email) === email)) return respond(409, { error: 'That email address is already linked to another account.' });
+          if (data.members.some(member => member.id !== currentUser.id && normalizePhone(member.phone) === phone)) return respond(409, { error: 'That mobile number is already linked to another account.' });
           currentUser.firstName = firstName;
           currentUser.lastName = lastName;
           currentUser.name = `${firstName} ${lastName}`;
+          currentUser.email = email;
+          currentUser.phone = phone;
           currentUser.role = role;
           await dataStore.save(data);
-          return respond(200, { user: publicMember(currentUser) });
+          return respond(200, { user: publicMember(currentUser, true) });
         }
         if (request.method === 'POST' && pathname === '/api/availability') {
           if (!requireUser()) return;
@@ -628,7 +740,11 @@ function createAppServer({
       }
     }
 
-    let filePath = pathname === '/' ? path.join(publicDir, 'index.html') : path.resolve(publicDir, `.${pathname}`);
+    if (pathname === '/reset-password' && request.method !== 'GET') {
+      response.writeHead(404, securityHeaders()).end('Not found');
+      return;
+    }
+    let filePath = pathname === '/' || pathname === '/reset-password' ? path.join(publicDir, 'index.html') : path.resolve(publicDir, `.${pathname}`);
     if (!filePath.startsWith(`${publicDir}${path.sep}`) && filePath !== path.join(publicDir, 'index.html')) {
       response.writeHead(403, securityHeaders()).end('Forbidden');
       return;
@@ -638,7 +754,7 @@ function createAppServer({
       const extension = path.extname(filePath);
       const type = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' }[extension] || 'application/octet-stream';
       const revalidate = ['.html', '.css', '.js', '.webmanifest'].includes(extension);
-      response.writeHead(200, securityHeaders({ 'content-type': type, 'cache-control': revalidate ? 'no-cache' : 'public, max-age=3600' }));
+      response.writeHead(200, securityHeaders({ 'content-type': type, 'cache-control': pathname === '/reset-password' ? 'no-store' : revalidate ? 'no-cache' : 'public, max-age=3600' }));
       response.end(body);
     } catch (error) {
       if (error.code === 'ENOENT') response.writeHead(404).end('Not found');

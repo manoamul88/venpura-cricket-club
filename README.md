@@ -11,13 +11,14 @@ The app can be shared at a public HTTPS link using **Render for hosting** and **
 - A GitHub repository containing this project. (GitHub is not open source, but its public repository option is free. A private repository is also possible.)
 - A Supabase account and project. The Supabase free plan is useful for a small team; it currently includes a 500 MB database but may pause the project after seven days of inactivity.
 - A Render account. Its free web service provides a shareable `onrender.com` URL, but it sleeps after about 15 minutes idle and can take around a minute to wake. It has no persistent local disk; team records therefore live in Supabase instead.
-- No SMS gateway. Members create accounts with usernames and passwords; set the administrator credentials as private Render environment variables.
+- Members create accounts with a username, password, email address, and mobile number. Sign-up does not send OTPs.
+- Email password recovery sends a one-time link through SMTP. The Blueprint is prefilled for Gmail; you must privately add the Gmail address and a Google App Password in Render before recovery emails can be sent. SMS recovery is not enabled.
 
-The free hosting tiers can sleep or pause and are intended for a small team/demo, not guaranteed always-on production service. Current provider limits can change. No accounts or repository have been connected, so **the app is not live yet and has no public URL**.
+The free hosting tiers can sleep or pause and are intended for a small team/demo, not guaranteed always-on production service. Current provider limits can change.
 
 ### Create your shareable link
 
-1. Create a free GitHub repository, then upload/push this app’s project files. Do **not** include `data/`, `.env`, passwords, or Supabase service-role keys. The existing workspace itself does not have a Git remote.
+1. This project is in the [VENPURA GitHub repository](https://github.com/manoamul88/venpura-cricket-club). Do **not** include `data/`, `.env`, passwords, or Supabase Secret keys in Git.
 2. Create a Supabase project. Open **SQL Editor**, paste and run [`supabase/schema.sql`](./supabase/schema.sql). In **Project Settings → API Keys**, copy the project URL and the server-only **Secret key** (it starts with `sb_secret_`). The app supports Supabase's newer secret key and legacy `service_role` key. Never use either secret in browser code or commit it.
 3. In Render, create a **Blueprint** and connect the GitHub repository containing this project. Render detects [`render.yaml`](./render.yaml) and creates the free Docker web service. Its Environment settings will ask for:
 
@@ -25,10 +26,14 @@ The free hosting tiers can sleep or pause and are intended for a small team/demo
    - `VENPURA_ADMIN_PASSWORD`: set a unique, strong password of at least 12 characters.
    - `SUPABASE_URL`: your Supabase project URL.
    - `SUPABASE_SERVICE_ROLE_KEY`: your private Supabase Secret key (`sb_secret_...`) or legacy `service_role` key.
+   - `SMTP_USER`: the Gmail address that will send password-reset email.
+   - `SMTP_PASSWORD`: a Google App Password for that Gmail account, not its normal sign-in password.
+   - `SMTP_FROM`: `VENPURA <your-email@gmail.com>` using the same Gmail address.
 
    Enter all secrets directly into the Render dashboard, never in chat or Git.
+   To create a Google App Password, first enable 2-Step Verification on the Gmail/Google account, then open [Google App Passwords](https://myaccount.google.com/apppasswords) and create one for VENPURA. Google shows the password once; copy it directly into Render. If App Passwords are unavailable for the account, use an SMTP email provider instead and enter its SMTP settings in Render.
 4. Deploy the Blueprint. When Render reports **Live**, copy the generated `https://venpura-cricket-club.onrender.com` (your actual name may differ) link and send it to your friends.
-5. Open the HTTPS link and sign in with the configured administrator account. Admin can publish fixtures; friends create their own username/password accounts. No SMS or phone verification is used.
+5. Open the HTTPS link and sign in with the configured administrator account. Admin can publish fixtures; friends create their own username/password accounts with their email and mobile number. **Forgot password** sends a reset link to the account email. The administrator password is changed in Render settings rather than through member recovery.
 
 **Alternative:** A private Ubuntu VPS with Docker and Caddy can avoid Render's free-service sleep. It is not a free hosting guarantee: VPS, bandwidth, and possibly a domain can cost money. See [`docker-compose.yml`](./docker-compose.yml) for the self-hosted option.
 
@@ -63,7 +68,7 @@ The “Pay” button records a payment in the demo ledger only. It does **not** 
 
 ## Passwords, push, and score feeds
 
-Accounts use usernames and passwords, protected with salted scrypt password hashes. Passwords are not stored in plaintext. Production administrator credentials come from `VENPURA_ADMIN_USERNAME` and `VENPURA_ADMIN_PASSWORD`; ordinary members register through the app. The server rate-limits repeated failed login attempts. Because there is no OTP/phone verification, an administrator should share the club URL and membership expectations only with intended players.
+Accounts use usernames and passwords, protected with salted scrypt password hashes. Passwords are not stored in plaintext. Production administrator credentials come from `VENPURA_ADMIN_USERNAME` and `VENPURA_ADMIN_PASSWORD`; ordinary members register through the app with required email and mobile contact details. Player contact details are returned only to the signed-in player, not exposed in the squad list. Forgot-password links are single-use, expire after 30 minutes, and require SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, and `PUBLIC_APP_URL`). The server rate-limits repeated login and recovery requests. The admin password is managed in Render.
 
 Fixture and ball-duty alerts are persisted in the app inbox and appear in an open client after its next refresh (within 30 seconds). Browser notifications may appear while the app is open if permission has already been granted. Offline, background, and lock-screen delivery requires a Web Push provider and VAPID keys; this project does not claim to send push messages when the server or app is offline.
 
