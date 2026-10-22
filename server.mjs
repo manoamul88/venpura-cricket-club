@@ -43,7 +43,7 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
   if (!includeSamples) {
     return {
       members: [], events: [], payments: [], tournamentPayments: [], scorecards: [],
-      availability: {}, notifications: [], ballRemindersSent: [], media: []
+      availability: {}, notifications: [], ballRemindersSent: [], paymentRemindersSent: [], media: []
     };
   }
   const members = [
@@ -82,9 +82,9 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
   return {
     members, events, payments, tournamentPayments, scorecards: [], availability: {},
     notifications: [
-      { id: 'welcome-note', title: 'Welcome to VENPURA', message: 'Your club hub is ready. Confirm your spot for the next weekend fixture by Wednesday.', createdAt: new Date().toISOString(), read: false }
+      { id: 'welcome-note', title: 'Welcome to VENPURA', message: 'Your club hub is ready. Confirm your availability for the upcoming weekend fixtures.', createdAt: new Date().toISOString(), read: false }
     ],
-    ballRemindersSent: [], media: []
+    ballRemindersSent: [], paymentRemindersSent: [], media: []
   };
 }
 
@@ -103,6 +103,7 @@ async function loadData(dataFile, seedOptions) {
       availability: saved.availability && typeof saved.availability === 'object' ? saved.availability : {},
       notifications: Array.isArray(saved.notifications) ? saved.notifications : base.notifications,
       ballRemindersSent: Array.isArray(saved.ballRemindersSent) ? saved.ballRemindersSent : [],
+      paymentRemindersSent: Array.isArray(saved.paymentRemindersSent) ? saved.paymentRemindersSent : [],
       media: Array.isArray(saved.media) ? saved.media : []
     };
   } catch (error) {
@@ -160,6 +161,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
         availability: state.availability && typeof state.availability === 'object' ? state.availability : {},
         notifications: Array.isArray(state.notifications) ? state.notifications : base.notifications,
         ballRemindersSent: Array.isArray(state.ballRemindersSent) ? state.ballRemindersSent : [],
+        paymentRemindersSent: Array.isArray(state.paymentRemindersSent) ? state.paymentRemindersSent : [],
         media: Array.isArray(state.media) ? state.media : [],
         _revision: revision
       };
@@ -389,6 +391,36 @@ function ensureMondayBallReminder(data, now = new Date()) {
   return true;
 }
 
+function ensureMondayPaymentReminders(data, now = new Date()) {
+  if (indiaWeekday(now) !== 1) return false;
+  data.paymentRemindersSent ||= [];
+  const today = indiaDate(now);
+  const lastDate = new Date(`${today}T12:00:00Z`);
+  lastDate.setUTCDate(lastDate.getUTCDate() + 6);
+  const weekEnd = isoDate(lastDate);
+  let created = false;
+
+  for (const event of data.events) {
+    if (event.date < today || event.date > weekEnd) continue;
+    const payments = event.type === 'tournament' ? data.tournamentPayments : data.payments;
+    for (const payment of payments.filter(item => item.eventId === event.id && !item.paid)) {
+      const member = data.members.find(item => item.id === payment.memberId);
+      if (!member) continue;
+      const sentKey = `${today}:${event.id}:${member.id}`;
+      if (data.paymentRemindersSent.includes(sentKey)) continue;
+      data.notifications.unshift({
+        id: `payment-reminder-${sentKey}`,
+        title: 'Match contribution reminder',
+        message: `${member.name}, your ₹${Number(payment.amount).toLocaleString('en-IN')} contribution for ${event.title} vs ${event.opponent} on ${event.date} is still marked unpaid. Please settle it before match day.`,
+        createdAt: now.toISOString(), read: false, memberId: member.id
+      });
+      data.paymentRemindersSent.push(sentKey);
+      created = true;
+    }
+  }
+  return created;
+}
+
 function getSession(request, sessions, data) {
   const cookie = request.headers.cookie || '';
   const token = cookie.split(';').map(part => part.trim()).find(part => part.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1);
@@ -527,7 +559,10 @@ function createAppServer({
             await dataStore.save(data);
           }
         }
-        if (ensureMondayBallReminder(data, now())) await dataStore.save(data);
+        const monday = now();
+        const createdBallReminder = ensureMondayBallReminder(data, monday);
+        const createdPaymentReminders = ensureMondayPaymentReminders(data, monday);
+        if (createdBallReminder || createdPaymentReminders) await dataStore.save(data);
         const currentUser = getSession(request, sessions, data);
         const isAdmin = Boolean(currentUser?.isAdmin);
         const respond = (status, body, headers) => sendJson(response, status, body, headers);
@@ -810,7 +845,6 @@ function createAppServer({
           const body = await readBody(request);
           const event = data.events.find(item => item.id === body.eventId);
           if (!event) return respond(404, { error: 'This fixture could not be found.' });
-          if (now() > attendanceDeadline(event)) return respond(409, { error: 'Availability closed on Wednesday. Ask your admin if your plans changed.' });
           if (!['yes', 'no'].includes(body.answer)) return respond(400, { error: 'Choose Yes or No to record your availability.' });
           data.availability[event.id] ||= {};
           data.availability[event.id][currentUser.id] = body.answer;
@@ -917,7 +951,7 @@ function createAppServer({
           }
           data.members.forEach(member => data.notifications.unshift({
             id: `match-${event.id}-${member.id}`, title: 'A new match is on the calendar',
-            message: `${event.title} vs ${event.opponent} · ${date} at ${event.time}, ${event.venue}. Please submit your availability by Wednesday.`,
+            message: `${event.title} vs ${event.opponent} · ${date} at ${event.time}, ${event.venue}. Please submit your availability in the app.`,
             createdAt: now().toISOString(), read: false, memberId: member.id
           }));
           await dataStore.save(data);
@@ -993,9 +1027,12 @@ function createAppServer({
   const runBallReminderJob = async () => {
     try {
       const data = await dataStore.load(dataOptions);
-      if (ensureMondayBallReminder(data, now())) await dataStore.save(data);
+      const monday = now();
+      const createdBallReminder = ensureMondayBallReminder(data, monday);
+      const createdPaymentReminders = ensureMondayPaymentReminders(data, monday);
+      if (createdBallReminder || createdPaymentReminders) await dataStore.save(data);
     } catch (error) {
-      console.error(`Could not create the scheduled VENPURA ball reminder: ${error.message}`);
+      console.error(`Could not create scheduled VENPURA match reminders: ${error.message}`);
     }
   };
   const reminderTimer = setInterval(runBallReminderJob, 60_000);
@@ -1014,4 +1051,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   });
 }
 
-export { createAppServer, createSupabaseStore, ensureMondayBallReminder, nextBallBuyer, seedData };
+export { createAppServer, createSupabaseStore, ensureMondayBallReminder, ensureMondayPaymentReminders, nextBallBuyer, seedData };

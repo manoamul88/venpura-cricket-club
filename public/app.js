@@ -276,10 +276,6 @@ function answerCount(eventId, answer) {
 function fixtureCard(event) {
   const parts = dateParts(event.date);
   const myVote = myAnswer(event.id);
-  const deadline = new Date(`${event.date}T12:00:00`);
-  deadline.setDate(deadline.getDate() - ((deadline.getDay() - 3 + 7) % 7 || 7));
-  const deadlineIso = `${deadline.getFullYear()}-${String(deadline.getMonth() + 1).padStart(2, '0')}-${String(deadline.getDate()).padStart(2, '0')}`;
-  const voteOpen = new Date() <= new Date(`${deadlineIso}T23:59:59+05:30`);
   const typeBadge = event.type === 'tournament' ? '<span class="badge badge-gold">✦ Tournament</span>' : '<span class="badge">Weekend fixture</span>';
   return `
     <article class="match-card" data-event-card="${esc(event.id)}">
@@ -294,9 +290,9 @@ function fixtureCard(event) {
       <div class="match-footer">
         <span class="vote-label">${myVote
           ? `Your answer: <strong class="${myVote === 'yes' ? 'answer-yes' : 'answer-no'}">${myVote === 'yes' ? 'You’re in!' : 'Can’t make it'}</strong>`
-          : voteOpen ? `Be there? <strong>${answerCount(event.id, 'yes')} confirmed</strong>` : 'Availability closed'}
+          : `Be there? <strong>${answerCount(event.id, 'yes')} confirmed</strong>`}
         </span>
-        ${voteOpen ? `<div class="vote-actions"><button class="button button-small${myVote === 'yes' ? ' selected-yes' : ' button-soft'}" data-action="vote" data-event="${esc(event.id)}" data-answer="yes">✓ Yes</button><button class="button button-small${myVote === 'no' ? ' selected-no' : ''}" data-action="vote" data-event="${esc(event.id)}" data-answer="no">No</button></div>` : `<span class="badge badge-gray">${answerCount(event.id, 'yes')} confirmed</span>`}
+        <div class="vote-actions"><button class="button button-small${myVote === 'yes' ? ' selected-yes' : ' button-soft'}" data-action="vote" data-event="${esc(event.id)}" data-answer="yes">✓ Yes</button><button class="button button-small${myVote === 'no' ? ' selected-no' : ''}" data-action="vote" data-event="${esc(event.id)}" data-answer="no">No</button></div>
       </div>
     </article>`;
 }
@@ -316,16 +312,15 @@ function contributorsCard(event, compact = false, canManage = false) {
   const paidRatio = totalExpected ? Math.round(totalPaid / totalExpected * 100) : 0;
   return `
     <section class="card money-card">
-      <div class="card-header"><div><h2 class="card-title">${event.type === 'tournament' ? 'Tournament entry' : 'Saturday match kitty'}</h2><p class="card-caption">${esc(dateParts(event.date).full)} · ₹${amount} per person</p></div><button class="text-link" data-nav="money">View all →</button></div>
+      <div class="card-header"><div><h2 class="card-title">${event.type === 'tournament' ? 'Tournament entry' : 'Saturday Match'}</h2><p class="card-caption">${esc(dateParts(event.date).full)} · ₹${amount} per person</p></div><button class="text-link" data-nav="money">View all →</button></div>
       <div class="progress-track"><div class="progress-fill" style="width:${paidRatio}%"></div></div>
       <div class="progress-caption"><span>₹${totalPaid} collected of ₹${totalExpected}</span><span>${paidCount}/${state.members.length} paid</span></div>
       <div class="contributor-list">${membersByName().map(member => {
         const payment = list.find(item => item.memberId === member.id);
-        return `<div class="contributor-row">${personCell(member)}<span class="amount">₹${amount}</span>${payment?.paid
-          ? '<span class="paid-status">✓ Paid</span>'
-          : canManage && isAdminUser() ? `<button class="button button-small button-soft" data-action="payment" data-event="${esc(event.id)}" data-member="${esc(member.id)}" data-paid="true">Mark paid</button>`
-          : member.id === state.user?.id ? `<button class="button button-small" data-action="payment" data-event="${esc(event.id)}" data-member="${esc(member.id)}" data-paid="true">Pay ₹${amount}</button>`
-          : '<span class="unpaid-status">Pending</span>'}</div>`;
+        const status = canManage && isAdminUser()
+          ? `<button class="button button-small ${payment?.paid ? 'button-soft' : ''}" data-action="payment" data-event="${esc(event.id)}" data-member="${esc(member.id)}" data-paid="${payment?.paid ? 'false' : 'true'}">${payment?.paid ? 'Mark unpaid' : 'Mark paid'}</button>`
+          : payment?.paid ? '<span class="paid-status">✓ Paid</span>' : '<span class="unpaid-status">Unpaid</span>';
+        return `<div class="contributor-row">${personCell(member)}<span class="amount">₹${amount}</span>${status}</div>`;
       }).join('')}</div>
       ${compact ? '' : `<div class="card-header"><span class="field-help">${event.type === 'tournament' ? 'A transparent tally of every tournament entry.' : 'Every Saturday, each of us chips in ₹30.'}</span></div>`}
     </section>`;
@@ -363,15 +358,15 @@ function renderHome() {
     <section class="stats-grid" aria-label="Team at a glance">
       <div class="stat-card"><span class="stat-symbol">▦</span><div><div class="stat-label">UP NEXT</div><div class="stat-value">${upcoming.length}</div><div class="stat-footnote">matches on the calendar</div></div></div>
       <div class="stat-card"><span class="stat-symbol">◉</span><div><div class="stat-label">THE SQUAD</div><div class="stat-value">${state.members.length}</div><div class="stat-footnote">players and counting</div></div></div>
-      <div class="stat-card"><span class="stat-symbol">✓</span><div><div class="stat-label">SATURDAY KITTY</div><div class="stat-value">₹${paid * 30}</div><div class="stat-footnote">of ₹${target} contributed</div></div></div>
+      <div class="stat-card"><span class="stat-symbol">✓</span><div><div class="stat-label">SATURDAY MATCH</div><div class="stat-value">₹${paid * 30}</div><div class="stat-footnote">of ₹${target} contributed</div></div></div>
       <div class="stat-card"><span class="stat-symbol">↗</span><div><div class="stat-label">SEASON RUNS</div><div class="stat-value">${state.members.reduce((total, member) => total + member.matches * member.average, 0).toLocaleString('en-IN')}</div><div class="stat-footnote">across the squad</div></div></div>
     </section>
     <div class="dashboard-grid">
       <div class="stack">
         <section class="card">
-          <div class="card-header"><div><h2 class="card-title">This weekend, together.</h2><p class="card-caption">Say yes or no by Wednesday so we can get the side sorted.</p></div><button class="text-link" data-nav="fixtures">All matches →</button></div>
+          <div class="card-header"><div><h2 class="card-title">This weekend, together.</h2><p class="card-caption">Let the captain know if you’re in or out for each match.</p></div><button class="text-link" data-nav="fixtures">All matches →</button></div>
           ${weekendFixtures.length ? `<div class="match-list">${weekendFixtures.map(fixtureCard).join('')}</div>` : '<div class="empty-state">The next good game starts when you add a match.</div>'}
-          <div class="section-banner"><span>✦</span><span><strong>Why Wednesday?</strong> It gives the captain enough time to put the playing XI together before the weekend.</span></div>
+          <div class="section-banner"><span>✦</span><span><strong>Plans can change.</strong> Update your Yes or No for any upcoming match whenever you need to.</span></div>
         </section>
         ${contributorsCard(saturday, true)}
       </div>
@@ -553,16 +548,16 @@ function renderAdmin() {
           <label class="field field-wide tournament-title-field" hidden><span class="field-label">Tournament name</span><input class="field-input" name="title" placeholder="e.g. City Weekend Cup"></label>
         </div><div class="modal-footer"><button class="button button-primary" type="submit">Publish fixture to the squad →</button></div><p class="field-help">Choose Saturday or Sunday separately and select a date matching that day. Tournaments can be scheduled on either day. Publishing alerts every team member.</p></form>
       </section>
-      <section class="card"><div class="card-header"><div><h2 class="card-title">This Saturday’s kitty</h2><p class="card-caption">${saturday ? `${esc(dateParts(saturday.date).full)} · ₹30 per person` : 'No Saturday match scheduled.'}</p></div></div>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">Saturday Match</h2><p class="card-caption">${saturday ? `${esc(dateParts(saturday.date).full)} · ₹30 per person` : 'No Saturday match scheduled.'}</p></div></div>
         ${saturday ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>PLAYER</th><th>SHARE</th><th>STATUS</th></tr></thead><tbody>${membersByName().map(member => {
           const payment = payments.find(item => item.memberId === member.id);
-          return `<tr><td>${esc(member.name)}</td><td>₹30</td><td>${payment?.paid ? '<span class="paid-status">✓ Paid</span>' : `<button class="button button-small button-soft" data-action="payment" data-event="${esc(saturday.id)}" data-member="${esc(member.id)}" data-paid="true">Record payment</button>`}</td></tr>`;
+          return `<tr><td>${esc(member.name)}</td><td>₹30</td><td><button class="button button-small ${payment?.paid ? 'button-soft' : ''}" data-action="payment" data-event="${esc(saturday.id)}" data-member="${esc(member.id)}" data-paid="${payment?.paid ? 'false' : 'true'}">${payment?.paid ? 'Mark unpaid' : 'Mark paid'}</button></td></tr>`;
         }).join('')}</tbody></table></div>` : '<div class="empty-state">Add a Saturday fixture to start.</div>'}
       </section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">The next few weekends</h2><p class="card-caption">Your team’s calendar at a glance.</p></div></div>
         ${upcoming.slice(0, 6).map(event => `<div class="fee-event"><div><div class="fee-event-name">${esc(event.title)} · ${esc(event.opponent)}</div><div class="fee-event-date">${esc(dateParts(event.date).full)} at ${esc(timeLabel(event.time))} · ${esc(event.venue)}</div></div><span class="badge ${event.type === 'tournament' ? 'badge-gold' : ''}">${event.type === 'tournament' ? 'TOURNAMENT' : 'MATCH'}</span></div>`).join('') || '<div class="empty-state">Your calendar is ready for its first match.</div>'}
       </section>
-      <section class="card"><div class="card-header"><div><h2 class="card-title">A few small agreements</h2><p class="card-caption">Everyone plays better when the rules are clear.</p></div></div><div class="ball-duty"><p class="duty-note">• A Saturday fixture costs each player ₹30.</p><p class="duty-note">• Availability closes Wednesday at 11:59 PM (IST).</p><p class="duty-note">• The Sunday match ball rotates alphabetically, with Monday in-app reminders.</p><p class="duty-note">• A tournament fee is set when the tournament is published.</p></div></section>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">A few small agreements</h2><p class="card-caption">Everyone plays better when the rules are clear.</p></div></div><div class="ball-duty"><p class="duty-note">• A Saturday fixture costs each player ₹30.</p><p class="duty-note">• Update your availability for upcoming matches whenever plans change.</p><p class="duty-note">• The Sunday match ball rotates alphabetically, with Monday in-app reminders.</p><p class="duty-note">• Monday reminders go to players with unpaid contributions for matches in the coming week.</p><p class="duty-note">• A tournament fee is set when the tournament is published.</p></div></section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">Record the scorecard</h2><p class="card-caption">Update the runs, wickets, and matches played for every player.</p></div></div>
         ${scorecardOptions.length ? `<form id="scorecard-form" class="form-card">
           <label class="field"><span class="field-label">Match</span><select class="field-input" name="eventId" required>${scorecardOptions.map(event => `<option value="${esc(event.id)}">${esc(event.title)} · ${esc(event.opponent)} · ${esc(dateParts(event.date).full)}</option>`).join('')}</select></label>

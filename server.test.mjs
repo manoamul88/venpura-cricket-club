@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createAppServer, createSupabaseStore, ensureMondayBallReminder, seedData } from './server.mjs';
+import { createAppServer, createSupabaseStore, ensureMondayBallReminder, ensureMondayPaymentReminders, seedData } from './server.mjs';
 
 function send(baseUrl, pathname, { method = 'GET', body, cookie } = {}) {
   return fetch(`${baseUrl}${pathname}`, {
@@ -114,6 +114,14 @@ test('demo members can vote and pay while admin-only match publishing alerts the
     method: 'POST', cookie: adminCookie, body: { paid: true }
   });
   assert.equal(adminPaidShare.status, 200);
+  const adminUnpaidShare = await send(baseUrl, `/api/payments/${saturday.id}/m-01`, {
+    method: 'POST', cookie: adminCookie, body: { paid: false }
+  });
+  assert.equal(adminUnpaidShare.status, 200);
+  assert.equal((await adminUnpaidShare.json()).payment.paid, false);
+  await send(baseUrl, `/api/payments/${saturday.id}/m-01`, {
+    method: 'POST', cookie: adminCookie, body: { paid: true }
+  });
 
   const scorecard = {
     eventId: saturday.id,
@@ -167,7 +175,7 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   assert.equal(anonymousVote.status, 401);
 });
 
-test('availability closes after Wednesday and Monday ball reminders rotate alphabetically once', async t => {
+test('availability stays open for upcoming matches and Monday ball reminders rotate once', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'venpura-deadline-test-'));
   const dataFile = path.join(directory, 'team.json');
   const overdueData = seedData();
@@ -196,7 +204,7 @@ test('availability closes after Wednesday and Monday ball reminders rotate alpha
   const lateVote = await send(baseUrl, '/api/availability', {
     method: 'POST', cookie, body: { eventId: saturday.id, answer: 'yes' }
   });
-  assert.equal(lateVote.status, 409);
+  assert.equal(lateVote.status, 200);
 
   const data = seedData();
   data.events = [{
@@ -211,6 +219,30 @@ test('availability closes after Wednesday and Monday ball reminders rotate alpha
   assert.match(reminder.message, /Aarav Desai/);
   assert.equal(ensureMondayBallReminder(data, monday), false);
   assert.equal(data.notifications.filter(item => item.id === reminder.id).length, 1);
+});
+
+test('Monday payment reminders reach only unpaid players for matches in the coming week, once', () => {
+  const data = seedData();
+  const saturday = data.events.find(event => event.id === 'fixture-saturday');
+  const sunday = data.events.find(event => event.id === 'fixture-sunday');
+  const tournament = data.events.find(event => event.id === 'tournament-october');
+  saturday.date = '2026-10-24';
+  sunday.date = '2026-10-25';
+  tournament.date = '2026-10-25';
+  data.payments.forEach(payment => { payment.paid = true; });
+  data.tournamentPayments.forEach(payment => { payment.paid = true; });
+  data.payments.find(payment => payment.eventId === saturday.id && payment.memberId === 'm-01').paid = false;
+  data.tournamentPayments.find(payment => payment.eventId === tournament.id && payment.memberId === 'm-02').paid = false;
+
+  const monday = new Date('2026-10-19T09:00:00+05:30');
+  assert.equal(ensureMondayPaymentReminders(data, monday), true);
+  const reminders = data.notifications.filter(item => item.id.startsWith('payment-reminder-'));
+  assert.equal(reminders.length, 2);
+  assert.ok(reminders.some(item => item.memberId === 'm-01' && item.message.includes(saturday.title)));
+  assert.ok(reminders.some(item => item.memberId === 'm-02' && item.message.includes(tournament.title)));
+  assert.equal(reminders.some(item => item.memberId === 'm-01' && item.message.includes(tournament.title)), false);
+  assert.equal(ensureMondayPaymentReminders(data, monday), false);
+  assert.equal(data.notifications.filter(item => item.id.startsWith('payment-reminder-')).length, 2);
 });
 
 test('match media is private to signed-in members and removable by its owner or admin', async t => {

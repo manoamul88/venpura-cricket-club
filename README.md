@@ -52,12 +52,13 @@ Local demo accounts:
 ## Included
 
 - **Match calendar:** distinct Saturday match, Sunday match, and tournament fixture types, with matching date validation, start times, grounds, and an availability yes/no poll.
-- **Wednesday cutoff:** availability closes Wednesday at 11:59 p.m. India time before each weekend fixture.
+- **Availability poll:** players can update their Yes/No response for upcoming matches at any time; the dashboard displays the response counts.
 - **Player cards:** required first and last names and a choice of Bowler, Batter, All Rounder, or Wicket Keeper.
 - **CricHeroes profiles and scorecards:** every player can add a CricHeroes ID or official profile link. Admins can attach the official scorecard URL to a fixture; squad members open that link from the dashboard, where mobile devices may hand it off to the CricHeroes app. Scorecard details are not embedded because CricHeroes does not publish a verified public API for this app.
 - **Squad and stats:** player roster, batting-average and wicket charts, clearly labelled sample performance figures, and admin-entered per-player match scorecards that update season totals.
 - **Contributions:** a ₹30 Saturday share for each player, a player-by-player paid/pending ledger, and admin payment-recording controls. Tournament entry fees are set on the fixture and tracked by player, too.
 - **Sunday match ball:** the upcoming Sunday buyer rotates alphabetically; a server-side, once-per-Monday job records an in-app reminder for that player.
+- **Payment and ball reminders:** admins can toggle each player’s match payment between paid and unpaid. On Mondays, only players still marked unpaid for matches in the coming week receive an in-app payment reminder; the assigned Sunday ball buyer receives their ball reminder.
 - **Admin desk:** administrators can publish Saturday, Sunday, and tournament fixtures. Each team member receives a fixture notification, visible in the app and in open app tabs.
 - **Match memories:** signed-in players can upload match-linked photos and videos up to 50 MB. The dashboard gallery is private to squad members; players can remove their own uploads, and the admin can remove any upload.
 - **Progressive web app:** app manifest, installable home-screen icon, responsive mobile navigation, and a cached app shell for faster reloads.
