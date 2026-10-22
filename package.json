@@ -1,0 +1,15 @@
+{
+  "name": "venpura-cricket-club",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Mobile-first cricket team management for VENPURA.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

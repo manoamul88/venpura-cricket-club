@@ -1,0 +1,47 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      VENPURA_DATA_FILE: /app/data/venpura.json
+      VENPURA_ADMIN_USERNAME: ${VENPURA_ADMIN_USERNAME:?Set VENPURA_ADMIN_USERNAME in .env}
+      VENPURA_ADMIN_PASSWORD: ${VENPURA_ADMIN_PASSWORD:?Set VENPURA_ADMIN_PASSWORD in .env}
+      VENPURA_ADMIN_FIRST_NAME: ${VENPURA_ADMIN_FIRST_NAME:-Club}
+      VENPURA_ADMIN_LAST_NAME: ${VENPURA_ADMIN_LAST_NAME:-Admin}
+      SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in .env}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set SUPABASE_SERVICE_ROLE_KEY in .env}
+    volumes:
+      - venpura-data:/app/data
+    expose:
+      - "3000"
+    networks:
+      - venpura
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      VENPURA_DOMAIN: ${VENPURA_DOMAIN:?Set VENPURA_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - venpura
+
+volumes:
+  venpura-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  venpura:
