@@ -359,4 +359,27 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; }
   .page-title { font-size: 24px; }
   .roster-grid { gap: 7px; }
 }
+
+.club-note, .club-note strong, .profile-mini-name, .breadcrumb, .user-button span,
+.page-subtitle, .button, .duty-name, .player-name, .empty-state, .field-input,
+.toast, .login-description, .phone-field > span, .login-submit { font-size: 13px; }
+.nav-section-label, .eyebrow, .stat-label, .card-caption, .text-link,
+.match-detail-row, .field-label, .admin-table td, .person-name, .amount,
+.fee-event-name, .auth-notice, .demo-code, .notification-item,
+.media-details strong, .media-details p { font-size: 12px; }
+.brand-sub, .profile-mini-meta, .stat-footnote, .badge, .team-caption,
+.match-kicker, .availability-yes-list, .vote-label, .section-banner,
+.progress-caption, .paid-summary, .button-small, .paid-status, .unpaid-status,
+.payment-toggle, .money-subtitle, .duty-meta, .duty-note, .player-role, .player-cricheroes, .chart-legend,
+.chart-label, .chart-value, .fee-event-date, .field-help, .filter-chip,
+.admin-table th, .notification-date, .login-copyright, .demo-login-card small,
+.media-details > span, .step-indicator, .login-perks { font-size: 11px; }
+.avatar-xs { font-size: 11px; }
+.person-role { font-size: 10px; }
+.mobile-nav .nav-button { font-size: 10px; }
+.page-subtitle { line-height: 1.55; }
+.field-help, .duty-note, .notification-item { line-height: 1.6; }
+.heading-actions .button, .media-file-input, .demo-login-card strong { font-size: 12px; }
+.login-perks { font-size: 13px; }
+
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
