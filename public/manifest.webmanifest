@@ -4,15 +4,9 @@
   "description": "Your team, your match day.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7f6f1",
-  "theme_color": "#164e3b",
+  "background_color": "#f4f6fa",
+  "theme_color": "#17345b",
   "icons": [
-    {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
@@ -25,5 +19,6 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "prefer_related_applications": false
 }

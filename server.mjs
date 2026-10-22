@@ -755,7 +755,7 @@ function createAppServer({
     try {
       const body = await readFile(filePath);
       const extension = path.extname(filePath);
-      const type = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' }[extension] || 'application/octet-stream';
+      const type = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' }[extension] || 'application/octet-stream';
       const revalidate = ['.html', '.css', '.js', '.webmanifest'].includes(extension);
       response.writeHead(200, securityHeaders({ 'content-type': type, 'cache-control': pathname === '/reset-password' ? 'no-store' : revalidate ? 'no-cache' : 'public, max-age=3600' }));
       response.end(body);

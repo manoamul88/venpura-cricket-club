@@ -194,6 +194,9 @@ test('production supports username/password signup, rate limits failures, and pr
   });
 
   const baseUrl = `http://127.0.0.1:${application.address().port}`;
+  const logo = await send(baseUrl, '/venpura-logo.png');
+  assert.equal(logo.status, 200);
+  assert.equal(logo.headers.get('content-type'), 'image/png');
   const bootstrap = await (await send(baseUrl, '/api/bootstrap')).json();
   assert.equal(bootstrap.demoAllowed, false);
   assert.equal(bootstrap.members.length, 0);

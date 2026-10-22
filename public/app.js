@@ -150,7 +150,7 @@ function renderSignIn() {
   root.innerHTML = `
     <main class="login-page">
       <div class="login-visual">
-        <div class="brand"><span class="brand-mark">V</span><span><span class="brand-name">VENPURA</span><span class="brand-sub">CRICKET CLUB · EST. EVERY SATURDAY</span></span></div>
+        <div class="brand"><img class="brand-logo" src="/venpura-logo.png" alt="VENPURA Cricket Club"><span><span class="brand-name">VENPURA</span><span class="brand-sub">CRICKET CLUB · EST. EVERY SATURDAY</span></span></div>
         <div class="login-copy">
           <span class="eyebrow">ONE CLUB. ONE SQUAD.</span>
           <h1>Good cricket.<br>Better company.</h1>
@@ -161,7 +161,7 @@ function renderSignIn() {
       </div>
       <section class="login-panel">
         <div class="login-card">
-          <div class="modal-logo"><span class="brand-mark">V</span> VENPURA</div>
+          <div class="modal-logo"><img class="brand-logo" src="/venpura-logo.png" alt=""> VENPURA</div>
           <div class="step-indicator">${isReset || isForgot ? 'PASSWORD RECOVERY' : state.adminLogin ? 'ADMINISTRATOR SIGN IN' : isSignup ? 'JOIN THE SQUAD' : 'MEMBER SIGN IN'}</div>
           <h2>${isReset ? 'Choose a new password.' : isForgot ? 'Reset your password.' : state.adminLogin ? 'Captain, welcome back.' : isSignup ? 'Welcome to the team.' : 'Good to see you.'}</h2>
           <p class="login-description">${isReset ? 'Choose a new password for your VENPURA account.' : isForgot ? 'Enter the email address on your account. If it matches, we’ll email you a secure reset link.' : state.adminLogin ? 'Sign in with the administrator username and password configured for your cloud app.' : isSignup ? 'Create your player account. Your mobile number and email help the club stay in touch and let you recover your password by email.' : 'Sign in to your VENPURA account.'}</p>
@@ -207,7 +207,7 @@ function renderShell() {
   root.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand"><span class="brand-mark">V</span><span><span class="brand-name">VENPURA</span><span class="brand-sub">CRICKET CLUB</span></span></div>
+        <div class="brand"><img class="brand-logo" src="/venpura-logo.png" alt="VENPURA Cricket Club"><span><span class="brand-name">VENPURA</span><span class="brand-sub">CRICKET CLUB</span></span></div>
         <div class="nav-section-label">YOUR CLUB</div>
         <nav class="side-nav" aria-label="Main navigation">${navigation.map(item => navButton(item)).join('')}${isAdminUser() ? navButton(['admin', '⚙', 'Admin desk']) : ''}</nav>
         <div class="sidebar-bottom">

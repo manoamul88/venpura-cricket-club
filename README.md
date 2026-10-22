@@ -58,6 +58,7 @@ Local demo accounts:
 - **Sunday match ball:** the upcoming Sunday buyer rotates alphabetically; a server-side, once-per-Monday job records an in-app reminder for that player.
 - **Admin desk:** administrators can publish Saturday, Sunday, and tournament fixtures. Each team member receives a fixture notification, visible in the app and in open app tabs.
 - **Progressive web app:** app manifest, installable home-screen icon, responsive mobile navigation, and a cached app shell for faster reloads.
+- **VENPURA branding:** the supplied club crest is used across the app, sign-in screen, favicon, and install icons. The interface uses the crest's navy-and-gold palette with responsive, touch-friendly layouts.
 - **Optional score feed:** an integration hook for an administrator-selected JSON cricket-score endpoint.
 
 ## Storage and access
