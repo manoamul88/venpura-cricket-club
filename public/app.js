@@ -86,6 +86,18 @@ function escapeRole(value) {
   return String(value || 'all-rounder').replaceAll('-', ' ');
 }
 
+function safeCricheroesUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password &&
+      (url.hostname === 'cricheroes.com' || url.hostname.endsWith('.cricheroes.com'))
+      ? url.href
+      : '';
+  } catch {
+    return '';
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -366,7 +378,7 @@ function renderHome() {
       <div class="stack">
         ${ballDutyCard(sunday)}
         ${renderTournamentSummary(upcoming)}
-        ${renderLiveScoreCard(upcoming.find(event => dateParts(event.date).date.getDay() === 6) || upcoming[0])}
+        ${renderLiveScoreCard(upcoming.find(event => event.cricheroesScorecardUrl) || upcoming.find(event => dateParts(event.date).date.getDay() === 6) || upcoming[0])}
       </div>
     </div>
     ${renderMatchMedia()}`;
@@ -385,7 +397,10 @@ function renderTournamentSummary(upcoming = sortedUpcoming()) {
 }
 
 function renderLiveScoreCard(event) {
-  return `<section class="card"><div class="card-header"><div><h2 class="card-title">Live scorecard</h2><p class="card-caption">Following your fixtures, wherever possible.</p></div><span class="badge badge-gray">LIVE DATA</span></div><div class="ball-duty"><p class="duty-note">${esc(state.liveScore?.message || 'No live data provider is connected.')}</p>${event ? `<button class="button button-small" data-action="live-score" data-event="${esc(event.id)}">Check this match</button>` : ''}</div></section>`;
+  const linkedScorecard = safeCricheroesUrl(event?.cricheroesScorecardUrl);
+  return `<section class="card"><div class="card-header"><div><h2 class="card-title">Live scorecard</h2><p class="card-caption">${linkedScorecard ? `${esc(event.title)} vs ${esc(event.opponent)} · ${esc(dateParts(event.date).full)}` : 'Match scores from CricHeroes.'}</p></div><span class="badge ${linkedScorecard ? 'badge-gold' : 'badge-gray'}">${linkedScorecard ? 'CRICHEROES' : 'LIVE SCORE'}</span></div><div class="ball-duty">${linkedScorecard
+    ? `<p class="duty-note">Open the official CricHeroes scorecard. On mobile, the link may open the CricHeroes app if installed; otherwise it opens the website.</p><a class="button button-primary scorecard-link" href="${esc(linkedScorecard)}" target="_blank" rel="noopener noreferrer">Open CricHeroes scorecard ↗</a>`
+    : `<p class="duty-note">${event ? 'The admin can add this match’s CricHeroes scorecard link from the Admin desk.' : 'No match is on the calendar yet.'} CricHeroes score data is not automatically embedded because a verified public API is not available.</p>${event && state.isAdmin ? '<button class="button button-small" data-nav="admin">Add scorecard link</button>' : ''}`}</div></section>`;
 }
 
 function renderMatchMedia() {
@@ -441,7 +456,7 @@ function renderSquad() {
     </div>
     <section class="card"><div class="card-header"><div><h2 class="card-title">Your people</h2><p class="card-caption">A quick look at every player’s role and record.</p></div><button class="button button-small" data-action="profile">Edit your profile</button></div>
       <div class="roster-grid" style="padding:0 14px 16px">${membersByName().map(member => `
-        <article class="card player-card"><div class="player-top">${avatarHtml(member)}<div class="player-info"><h3 class="player-name">${esc(member.name)}</h3><p class="player-role">${esc(roleLabel(member.role))}${member.id === state.user.id ? ' · you' : ''}</p></div></div>
+        <article class="card player-card"><div class="player-top">${avatarHtml(member)}<div class="player-info"><h3 class="player-name">${esc(member.name)}</h3><p class="player-role">${esc(roleLabel(member.role))}${member.id === state.user.id ? ' · you' : ''}</p>${member.cricheroesId ? `<p class="player-cricheroes">CricHeroes: ${safeCricheroesUrl(member.cricheroesId) ? `<a href="${esc(safeCricheroesUrl(member.cricheroesId))}" target="_blank" rel="noopener noreferrer">${esc(member.cricheroesId)}</a>` : esc(member.cricheroesId)}</p>` : ''}</div></div>
           <div class="player-metrics"><div><div class="metric-value">${member.matches}</div><div class="metric-label">MATCHES</div></div><div><div class="metric-value">${member.average}</div><div class="metric-label">RUN AVG</div></div><div><div class="metric-value">${member.wickets}</div><div class="metric-label">WICKETS</div></div></div>
         </article>`).join('')}
       </div>
@@ -517,6 +532,7 @@ function renderAdmin() {
   const saturday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 6);
   const payments = saturday ? eventPayments(saturday) : [];
   const scorecardOptions = [...state.events].sort((a, b) => b.date.localeCompare(a.date));
+  const selectedScorecardMatch = scorecardOptions[0];
   return `
     <div class="stats-grid">
       <div class="stat-card"><span class="stat-symbol">◉</span><div><div class="stat-label">SQUAD SIZE</div><div class="stat-value">${state.members.length}</div><div class="stat-footnote">current players</div></div></div>
@@ -554,6 +570,14 @@ function renderAdmin() {
           <div class="modal-footer"><button class="button button-primary" type="submit">Save scorecard & update stats →</button></div><p class="field-help">One scorecard per fixture. Previously recorded scorecards are protected from duplicate entries.</p>
         </form>` : '<div class="empty-state">Add a fixture before recording its scorecard.</div>'}
       </section>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">CricHeroes live scorecard</h2><p class="card-caption">Attach the official scorecard link to a match for the squad dashboard.</p></div></div>
+        ${scorecardOptions.length ? `<form id="cricheroes-scorecard-form" class="form-card">
+          <label class="field"><span class="field-label">Match</span><select class="field-input" name="eventId" required>${scorecardOptions.map((event, index) => `<option value="${esc(event.id)}" ${index === 0 ? 'selected' : ''}>${esc(event.title)} · ${esc(event.opponent)} · ${esc(dateParts(event.date).full)}${event.cricheroesScorecardUrl ? ' · link added' : ''}</option>`).join('')}</select></label>
+          <label class="field field-wide"><span class="field-label">CricHeroes scorecard URL</span><input class="field-input" type="url" name="scorecardUrl" maxlength="2000" value="${esc(selectedScorecardMatch?.cricheroesScorecardUrl || '')}" placeholder="https://cricheroes.com/..."></label>
+          <div class="modal-footer"><button class="button button-primary" type="submit">Save scorecard link →</button></div>
+          <p class="field-help">Paste the match/scorecard link copied from CricHeroes. Leave it blank to remove the link. CricHeroes does not provide a verified public API here, so score details open on their official app/site rather than being embedded in VENPURA.</p>
+        </form>` : '<div class="empty-state">Add a fixture before linking its CricHeroes scorecard.</div>'}
+      </section>
     </div>`;
 }
 
@@ -583,8 +607,9 @@ function openProfile() {
       <label class="field field-wide"><span class="field-label">Your cricket role</span><select name="role" class="field-input">
         ${[['bowler','Bowler'],['batter','Batter'],['all-rounder','All Rounder'],['wicket keeper','Wicket Keeper']].map(([value,label]) => `<option value="${value}" ${state.user.role === value ? 'selected' : ''}>${label}</option>`).join('')}
       </select></label>
+      <label class="field field-wide"><span class="field-label">CricHeroes player ID or profile link</span><input name="cricheroesId" class="field-input" maxlength="300" value="${esc(state.user.cricheroesId || '')}" placeholder="Your CricHeroes ID or https://cricheroes.com/..."></label>
     </div>
-    <div class="auth-notice">Profile role changes update your squad card. Your password is never shown here.</div>
+    <div class="auth-notice">Your CricHeroes ID/profile link will appear on your squad card. Only use a profile link from the official cricheroes.com website.</div>
     <div class="modal-footer"><button class="button button-primary" type="submit">Save profile</button></div></form>
     <div class="profile-actions">
       ${state.isAdmin ? '<button class="button button-small" data-nav="admin" data-action="close-and-nav">⚙ Open admin desk</button>' : '<button class="button button-small" data-action="admin-login">Administrator login</button>'}
@@ -844,6 +869,22 @@ document.addEventListener('submit', async event => {
       button.disabled = false;
     }
   }
+  if (form.id === 'cricheroes-scorecard-form') {
+    const values = Object.fromEntries(new FormData(form));
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      await api('/api/matches/cricheroes-scorecard', {
+        method: 'POST', body: JSON.stringify(values)
+      });
+      await refreshData();
+      renderShell();
+      toast(values.scorecardUrl ? 'CricHeroes scorecard linked to the match.' : 'CricHeroes scorecard link removed.');
+    } catch (error) {
+      toast(error.message, true);
+      button.disabled = false;
+    }
+  }
   if (form.id === 'scorecard-form') {
     const values = new FormData(form);
     const players = membersByName().map(member => ({
@@ -875,6 +916,10 @@ document.addEventListener('change', event => {
     const title = document.querySelector('.tournament-title-field');
     fee.hidden = !tournament;
     title.hidden = !tournament;
+  }
+  if (event.target.name === 'eventId' && event.target.form?.id === 'cricheroes-scorecard-form') {
+    const match = state.events.find(item => item.id === event.target.value);
+    event.target.form.elements.scorecardUrl.value = match?.cricheroesScorecardUrl || '';
   }
 });
 

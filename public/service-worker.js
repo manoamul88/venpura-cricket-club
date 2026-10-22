@@ -1,4 +1,4 @@
-const CACHE = 'venpura-shell-v5';
+const CACHE = 'venpura-shell-v6';
 const APP_SHELL = ['/', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/venpura-logo.png'];
 
 self.addEventListener('install', event => {

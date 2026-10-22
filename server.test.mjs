@@ -63,6 +63,23 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   assert.equal(adminLogin.status, 200);
   const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
+  const memberScorecardLink = await send(baseUrl, '/api/matches/cricheroes-scorecard', {
+    method: 'POST', cookie: memberCookie,
+    body: { eventId: saturday.id, scorecardUrl: 'https://cricheroes.com/scorecard/123' }
+  });
+  assert.equal(memberScorecardLink.status, 403);
+  const invalidScorecardLink = await send(baseUrl, '/api/matches/cricheroes-scorecard', {
+    method: 'POST', cookie: adminCookie,
+    body: { eventId: saturday.id, scorecardUrl: 'https://example.com/scorecard/123' }
+  });
+  assert.equal(invalidScorecardLink.status, 400);
+  const linkedScorecard = await send(baseUrl, '/api/matches/cricheroes-scorecard', {
+    method: 'POST', cookie: adminCookie,
+    body: { eventId: saturday.id, scorecardUrl: 'https://cricheroes.com/scorecard/123' }
+  });
+  assert.equal(linkedScorecard.status, 200);
+  assert.equal((await linkedScorecard.json()).event.cricheroesScorecardUrl, 'https://cricheroes.com/scorecard/123');
+
   const teamMatch = await send(baseUrl, '/api/matches', {
     method: 'POST', cookie: memberCookie,
     body: { date: '2026-10-25', opponent: 'Invincibles XI', venue: 'Community Ground' }
@@ -107,6 +124,7 @@ test('demo members can vote and pay while admin-only match publishing alerts the
 
   const after = await (await send(baseUrl, '/api/bootstrap', { cookie: memberCookie })).json();
   assert.equal(after.availability[saturday.id][initial.currentUser.id], 'yes');
+  assert.equal(after.events.find(item => item.id === saturday.id).cricheroesScorecardUrl, 'https://cricheroes.com/scorecard/123');
   assert.equal(after.payments.find(item => item.eventId === saturday.id && item.memberId === 'm-01').paid, true);
   assert.equal(after.members.find(item => item.id === 'm-01').matches, 18);
   assert.equal(after.members.find(item => item.id === 'm-01').average, 37);
@@ -321,6 +339,41 @@ test('production supports username/password signup, rate limits failures, and pr
   const memberBootstrap = await (await send(baseUrl, '/api/bootstrap', { cookie: memberCookie })).json();
   assert.equal(memberBootstrap.members.find(member => member.username === 'player.one').email, undefined);
   assert.equal(memberBootstrap.currentUser.email, 'player@example.com');
+  const profileUpdate = await send(baseUrl, '/api/profile', {
+    method: 'POST', cookie: memberCookie,
+    body: {
+      firstName: 'Player', lastName: 'One', email: 'player@example.com',
+      phone: '98765 43210', role: 'batter', cricheroesId: 'player-123'
+    }
+  });
+  assert.equal(profileUpdate.status, 200);
+  assert.equal((await profileUpdate.json()).user.cricheroesId, 'player-123');
+  const invalidProfileLink = await send(baseUrl, '/api/profile', {
+    method: 'POST', cookie: memberCookie,
+    body: {
+      firstName: 'Player', lastName: 'One', email: 'player@example.com',
+      phone: '98765 43210', role: 'batter', cricheroesId: 'https://evil.example/player'
+    }
+  });
+  assert.equal(invalidProfileLink.status, 400);
+  const officialProfileLink = await send(baseUrl, '/api/profile', {
+    method: 'POST', cookie: memberCookie,
+    body: {
+      firstName: 'Player', lastName: 'One', email: 'player@example.com',
+      phone: '98765 43210', role: 'batter', cricheroesId: 'https://cricheroes.com/player/123'
+    }
+  });
+  assert.equal(officialProfileLink.status, 200);
+  assert.equal((await officialProfileLink.json()).user.cricheroesId, 'https://cricheroes.com/player/123');
+  assert.equal(storedState.members.find(member => member.username === 'player.one').cricheroesId, 'https://cricheroes.com/player/123');
+  const oldClientProfileUpdate = await send(baseUrl, '/api/profile', {
+    method: 'POST', cookie: memberCookie,
+    body: {
+      firstName: 'Player', lastName: 'One', email: 'player@example.com',
+      phone: '98765 43210', role: 'batter'
+    }
+  });
+  assert.equal((await oldClientProfileUpdate.json()).user.cricheroesId, 'https://cricheroes.com/player/123');
   assert.equal((await send(baseUrl, '/api/matches', {
     method: 'POST', cookie: memberCookie,
     body: { date: '2026-10-31', opponent: 'Rivals XI', venue: 'Oval' }

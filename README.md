@@ -54,6 +54,7 @@ Local demo accounts:
 - **Match calendar:** Saturday and Sunday club fixtures, tournament fixtures, start times, grounds, and an availability yes/no poll.
 - **Wednesday cutoff:** availability closes Wednesday at 11:59 p.m. India time before each weekend fixture.
 - **Player cards:** required first and last names and a choice of Bowler, Batter, All Rounder, or Wicket Keeper.
+- **CricHeroes profiles and scorecards:** every player can add a CricHeroes ID or official profile link. Admins can attach the official scorecard URL to a fixture; squad members open that link from the dashboard, where mobile devices may hand it off to the CricHeroes app. Scorecard details are not embedded because CricHeroes does not publish a verified public API for this app.
 - **Squad and stats:** player roster, batting-average and wicket charts, clearly labelled sample performance figures, and admin-entered per-player match scorecards that update season totals.
 - **Contributions:** a ₹30 Saturday share for each player, a player-by-player paid/pending ledger, and admin payment-recording controls. Tournament entry fees are set on the fixture and tracked by player, too.
 - **Sunday match ball:** the upcoming Sunday buyer rotates alphabetically; a server-side, once-per-Monday job records an in-app reminder for that player.
@@ -75,7 +76,7 @@ Accounts use usernames and passwords, protected with salted scrypt password hash
 
 Fixture and ball-duty alerts are persisted in the app inbox and appear in an open client after its next refresh (within 30 seconds). Browser notifications may appear while the app is open if permission has already been granted. Offline, background, and lock-screen delivery requires a Web Push provider and VAPID keys; this project does not claim to send push messages when the server or app is offline.
 
-No verified public Cricket Heroes API is bundled or assumed. The scorecard route is disabled until an administrator configures `CRICKET_API_URL` and, if required, `CRICKET_API_KEY`. This integration hook requests that JSON endpoint and reports provider errors; connect a provider that actually exposes the requested fixtures and that is licensed for your use. Never commit API credentials.
+No verified public CricHeroes API is bundled or assumed. Admins can add a secure `cricheroes.com` scorecard URL to a fixture so players can open its live scorecard on the official website or installed app. Score details are not scraped or embedded. An optional independent score-feed route can be configured with `CRICKET_API_URL` and, if required, `CRICKET_API_KEY`; use a provider that actually exposes the requested fixtures and is licensed for your use. Never commit API credentials.
 
 ## Useful next modules
 

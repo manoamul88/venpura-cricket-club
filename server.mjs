@@ -279,6 +279,37 @@ function validEmail(value) {
   return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function normalizeCricheroesProfile(value) {
+  const profile = String(value ?? '').trim();
+  if (!profile) return '';
+  if (profile.length > 300) return null;
+  if (!/^[a-z0-9._-]{1,100}$/i.test(profile)) {
+    try {
+      const profileUrl = new URL(profile);
+      const isOfficialHost = profileUrl.hostname === 'cricheroes.com' || profileUrl.hostname.endsWith('.cricheroes.com');
+      if (profileUrl.protocol !== 'https:' || !isOfficialHost || profileUrl.username || profileUrl.password) return null;
+      return profileUrl.toString();
+    } catch {
+      return null;
+    }
+  }
+  return profile;
+}
+
+function normalizeCricheroesScorecardUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw.length > 2000) return null;
+  try {
+    const scorecardUrl = new URL(raw);
+    const isOfficialHost = scorecardUrl.hostname === 'cricheroes.com' || scorecardUrl.hostname.endsWith('.cricheroes.com');
+    if (scorecardUrl.protocol !== 'https:' || !isOfficialHost || scorecardUrl.username || scorecardUrl.password) return null;
+    return scorecardUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
 function createPasswordResetEmailSender() {
   let transporter;
   return async ({ to, token }) => {
@@ -758,6 +789,10 @@ function createAppServer({
           if (!validEmail(email)) return respond(400, { error: 'Enter a valid email address for password recovery.' });
           if (!phone) return respond(400, { error: 'Enter a valid mobile number, including country code if outside India.' });
           if (!['bowler', 'batter', 'all-rounder', 'wicket keeper'].includes(role)) return respond(400, { error: 'Choose a valid cricket role.' });
+          const cricheroesId = body.cricheroesId === undefined
+            ? currentUser.cricheroesId || ''
+            : normalizeCricheroesProfile(body.cricheroesId);
+          if (cricheroesId === null) return respond(400, { error: 'Enter a valid CricHeroes ID or an HTTPS profile link from cricheroes.com.' });
           if (data.members.some(member => member.id !== currentUser.id && normalizeEmail(member.email) === email)) return respond(409, { error: 'That email address is already linked to another account.' });
           if (data.members.some(member => member.id !== currentUser.id && normalizePhone(member.phone) === phone)) return respond(409, { error: 'That mobile number is already linked to another account.' });
           currentUser.firstName = firstName;
@@ -766,6 +801,7 @@ function createAppServer({
           currentUser.email = email;
           currentUser.phone = phone;
           currentUser.role = role;
+          currentUser.cricheroesId = cricheroesId;
           await dataStore.save(data);
           return respond(200, { user: publicMember(currentUser, true) });
         }
@@ -875,6 +911,18 @@ function createAppServer({
           }));
           await dataStore.save(data);
           return respond(201, { event });
+        }
+        if (request.method === 'POST' && pathname === '/api/matches/cricheroes-scorecard') {
+          if (!requireAdmin()) return;
+          const body = await readBody(request);
+          const event = data.events.find(item => item.id === String(body.eventId || ''));
+          if (!event) return respond(404, { error: 'Choose a match on the calendar.' });
+          const scorecardUrl = normalizeCricheroesScorecardUrl(body.scorecardUrl);
+          if (scorecardUrl === null) return respond(400, { error: 'Use a secure HTTPS scorecard link hosted on cricheroes.com.' });
+          if (scorecardUrl) event.cricheroesScorecardUrl = scorecardUrl;
+          else delete event.cricheroesScorecardUrl;
+          await dataStore.save(data);
+          return respond(200, { event });
         }
         if (request.method === 'POST' && pathname === '/api/notifications/read') {
           if (!requireUser()) return;
