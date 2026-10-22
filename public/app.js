@@ -543,7 +543,7 @@ function renderAdmin() {
     <div class="admin-grid">
       <section class="card"><div class="card-header"><div><h2 class="card-title">Put a fixture on the calendar</h2><p class="card-caption">Every player gets an in-app match notification.</p></div></div>
         <form id="fixture-form" class="form-card"><div class="field-grid">
-          <label class="field field-wide"><span class="field-label">Fixture type</span><select class="field-input" name="type"><option value="weekend">Saturday / Sunday match</option><option value="tournament">Tournament</option></select></label>
+          <label class="field field-wide"><span class="field-label">Fixture type</span><select class="field-input" name="type"><option value="saturday">Saturday match</option><option value="sunday">Sunday match</option><option value="tournament">Tournament</option></select></label>
           <label class="field"><span class="field-label">Date *</span><input class="field-input" name="date" type="date" required></label>
           <label class="field"><span class="field-label">Start time</span><input class="field-input" name="time" type="time" value="07:30"></label>
           <label class="field"><span class="field-label">Opponent *</span><input class="field-input" name="opponent" required placeholder="e.g. Riverside XI"></label>
@@ -551,7 +551,7 @@ function renderAdmin() {
           <label class="field field-wide"><span class="field-label">Ground notes</span><input class="field-input" name="address" placeholder="Pitch, pavilion or directions"></label>
           <label class="field field-wide tournament-fee-field" hidden><span class="field-label">Tournament entry fee per player (₹)</span><input class="field-input" name="entryFee" type="number" min="0" value="500"></label>
           <label class="field field-wide tournament-title-field" hidden><span class="field-label">Tournament name</span><input class="field-input" name="title" placeholder="e.g. City Weekend Cup"></label>
-        </div><div class="modal-footer"><button class="button button-primary" type="submit">Publish fixture to the squad →</button></div><p class="field-help">Saturday and Sunday dates only. Publishing alerts every team member.</p></form>
+        </div><div class="modal-footer"><button class="button button-primary" type="submit">Publish fixture to the squad →</button></div><p class="field-help">Choose Saturday or Sunday separately and select a date matching that day. Tournaments can be scheduled on either day. Publishing alerts every team member.</p></form>
       </section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">This Saturday’s kitty</h2><p class="card-caption">${saturday ? `${esc(dateParts(saturday.date).full)} · ₹30 per person` : 'No Saturday match scheduled.'}</p></div></div>
         ${saturday ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>PLAYER</th><th>SHARE</th><th>STATUS</th></tr></thead><tbody>${membersByName().map(member => {
@@ -916,11 +916,32 @@ document.addEventListener('change', event => {
     const title = document.querySelector('.tournament-title-field');
     fee.hidden = !tournament;
     title.hidden = !tournament;
+    const date = event.target.form.elements.date;
+    const matchDay = event.target.value;
+    if (!date.value || !['saturday', 'sunday'].includes(matchDay)) {
+      date.setCustomValidity('');
+    } else {
+      const weekday = new Date(`${date.value}T12:00:00Z`).getUTCDay();
+      const expected = matchDay === 'saturday' ? 6 : 0;
+      date.setCustomValidity(weekday === expected ? '' : `Choose a ${matchDay} date for this fixture.`);
+    }
   }
   if (event.target.name === 'eventId' && event.target.form?.id === 'cricheroes-scorecard-form') {
     const match = state.events.find(item => item.id === event.target.value);
     event.target.form.elements.scorecardUrl.value = match?.cricheroesScorecardUrl || '';
   }
+});
+
+document.addEventListener('change', event => {
+  if (event.target.name !== 'date' || event.target.form?.id !== 'fixture-form') return;
+  const matchDay = event.target.form.elements.type.value;
+  if (!event.target.value || !['saturday', 'sunday'].includes(matchDay)) {
+    event.target.setCustomValidity('');
+    return;
+  }
+  const weekday = new Date(`${event.target.value}T12:00:00Z`).getUTCDay();
+  const expected = matchDay === 'saturday' ? 6 : 0;
+  event.target.setCustomValidity(weekday === expected ? '' : `Choose a ${matchDay} date for this fixture.`);
 });
 
 document.addEventListener('keydown', event => {

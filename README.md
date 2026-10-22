@@ -51,7 +51,7 @@ Local demo accounts:
 
 ## Included
 
-- **Match calendar:** Saturday and Sunday club fixtures, tournament fixtures, start times, grounds, and an availability yes/no poll.
+- **Match calendar:** distinct Saturday match, Sunday match, and tournament fixture types, with matching date validation, start times, grounds, and an availability yes/no poll.
 - **Wednesday cutoff:** availability closes Wednesday at 11:59 p.m. India time before each weekend fixture.
 - **Player cards:** required first and last names and a choice of Bowler, Batter, All Rounder, or Wicket Keeper.
 - **CricHeroes profiles and scorecards:** every player can add a CricHeroes ID or official profile link. Admins can attach the official scorecard URL to a fixture; squad members open that link from the dashboard, where mobile devices may hand it off to the CricHeroes app. Scorecard details are not embedded because CricHeroes does not publish a verified public API for this app.

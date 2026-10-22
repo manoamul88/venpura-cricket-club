@@ -92,6 +92,17 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   });
   assert.equal(invalidDay.status, 400);
 
+  const saturdayTypeOnSunday = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: { type: 'saturday', date: '2026-10-25', opponent: 'Rivals XI', venue: 'Oval' }
+  });
+  assert.equal(saturdayTypeOnSunday.status, 400);
+  const sundayTypeOnSaturday = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: { type: 'sunday', date: '2026-10-31', opponent: 'Rivals XI', venue: 'Oval' }
+  });
+  assert.equal(sundayTypeOnSaturday.status, 400);
+
   const published = await send(baseUrl, '/api/matches', {
     method: 'POST', cookie: adminCookie,
     body: { date: '2026-10-31', time: '09:00', opponent: 'Invincibles XI', venue: 'Community Ground' }
@@ -122,7 +133,24 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   });
   assert.equal(repeatedScorecard.status, 409);
 
+  const saturdayPublished = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: { type: 'saturday', date: '2026-11-14', opponent: 'Saturday XI', venue: 'North Ground' }
+  });
+  assert.equal(saturdayPublished.status, 201);
+  assert.equal((await saturdayPublished.json()).event.title, 'Saturday match');
+  const sundayPublished = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: { type: 'sunday', date: '2026-11-15', opponent: 'Sunday XI', venue: 'South Ground' }
+  });
+  assert.equal(sundayPublished.status, 201);
+  assert.equal((await sundayPublished.json()).event.title, 'Sunday match');
+
   const after = await (await send(baseUrl, '/api/bootstrap', { cookie: memberCookie })).json();
+  const saturdayFixture = after.events.find(item => item.date === '2026-11-14');
+  const sundayFixture = after.events.find(item => item.date === '2026-11-15');
+  assert.equal(after.payments.filter(item => item.eventId === saturdayFixture.id).length, after.members.length);
+  assert.equal(after.payments.some(item => item.eventId === sundayFixture.id), false);
   assert.equal(after.availability[saturday.id][initial.currentUser.id], 'yes');
   assert.equal(after.events.find(item => item.id === saturday.id).cricheroesScorecardUrl, 'https://cricheroes.com/scorecard/123');
   assert.equal(after.payments.find(item => item.eventId === saturday.id && item.memberId === 'm-01').paid, true);

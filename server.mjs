@@ -884,7 +884,16 @@ function createAppServer({
           if (!requireAdmin()) return;
           const body = await readBody(request);
           const date = String(body.date || '');
-          const type = body.type === 'tournament' ? 'tournament' : 'weekend';
+          const requestedType = String(body.type || 'weekend');
+          if (!['weekend', 'saturday', 'sunday', 'tournament'].includes(requestedType)) {
+            return respond(400, { error: 'Choose a Saturday match, Sunday match, or tournament.' });
+          }
+          const selectedDay = requestedType === 'saturday' ? 6 : requestedType === 'sunday' ? 0 : null;
+          if (selectedDay !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+              new Date(`${date}T12:00:00Z`).getUTCDay() !== selectedDay) {
+            return respond(400, { error: `The selected fixture type requires a ${requestedType} date.` });
+          }
+          const type = requestedType === 'tournament' ? 'tournament' : 'weekend';
           if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !validateWeekendDay(date)) {
             return respond(400, { error: 'Choose a Saturday or Sunday match date.' });
           }
@@ -892,7 +901,9 @@ function createAppServer({
           const venue = String(body.venue || '').trim();
           if (!opponent || !venue) return respond(400, { error: 'Opponent and ground are both required.' });
           const event = {
-            id: `fixture-${randomBytes(7).toString('hex')}`, title: type === 'tournament' ? String(body.title || 'Team tournament').trim() : 'Weekend fixture',
+            id: `fixture-${randomBytes(7).toString('hex')}`,
+            title: type === 'tournament' ? String(body.title || 'Team tournament').trim()
+              : selectedDay === 6 ? 'Saturday match' : selectedDay === 0 ? 'Sunday match' : 'Weekend fixture',
             opponent, type, date, time: String(body.time || '07:30'), venue,
             address: String(body.address || ''), entryFee: type === 'tournament' ? Math.max(0, Number(body.entryFee) || 500) : null,
             createdAt: now().toISOString()
