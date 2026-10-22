@@ -42,7 +42,7 @@ function nextDate(dayOfWeek, weeksAhead = 0) {
 function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
   if (!includeSamples) {
     return {
-      members: [], events: [], payments: [], tournamentPayments: [], scorecards: [],
+      members: [], events: [], payments: [], tournamentPayments: [], paymentHistory: [], scorecards: [],
       availability: {}, notifications: [], ballRemindersSent: [], paymentRemindersSent: [], media: []
     };
   }
@@ -80,7 +80,7 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
     paidAt: index < 2 ? new Date().toISOString() : null
   }));
   return {
-    members, events, payments, tournamentPayments, scorecards: [], availability: {},
+    members, events, payments, tournamentPayments, paymentHistory: [], scorecards: [], availability: {},
     notifications: [
       { id: 'welcome-note', title: 'Welcome to VENPURA', message: 'Your club hub is ready. Confirm your availability for the upcoming weekend fixtures.', createdAt: new Date().toISOString(), read: false }
     ],
@@ -99,6 +99,7 @@ async function loadData(dataFile, seedOptions) {
       events: saved.events?.length ? saved.events : base.events,
       payments: Array.isArray(saved.payments) ? saved.payments : base.payments,
       tournamentPayments: Array.isArray(saved.tournamentPayments) ? saved.tournamentPayments : base.tournamentPayments,
+      paymentHistory: Array.isArray(saved.paymentHistory) ? saved.paymentHistory : [],
       scorecards: Array.isArray(saved.scorecards) ? saved.scorecards : [],
       availability: saved.availability && typeof saved.availability === 'object' ? saved.availability : {},
       notifications: Array.isArray(saved.notifications) ? saved.notifications : base.notifications,
@@ -157,6 +158,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
         events: state.events?.length ? state.events : base.events,
         payments: Array.isArray(state.payments) ? state.payments : base.payments,
         tournamentPayments: Array.isArray(state.tournamentPayments) ? state.tournamentPayments : base.tournamentPayments,
+        paymentHistory: Array.isArray(state.paymentHistory) ? state.paymentHistory : [],
         scorecards: Array.isArray(state.scorecards) ? state.scorecards : [],
         availability: state.availability && typeof state.availability === 'object' ? state.availability : {},
         notifications: Array.isArray(state.notifications) ? state.notifications : base.notifications,
@@ -603,6 +605,7 @@ function createAppServer({
             events: currentUser ? data.events : [],
             payments: currentUser ? data.payments : [],
             tournamentPayments: currentUser ? data.tournamentPayments : [],
+            paymentHistory: currentUser && isAdmin ? data.paymentHistory : [],
             scorecards: currentUser ? data.scorecards : [],
             availability: currentUser ? data.availability : {},
             notifications: currentUser ? data.notifications : [],
@@ -673,10 +676,9 @@ function createAppServer({
         }
         const mediaMatch = pathname.match(/^\/api\/media\/([a-f0-9]{32})$/i);
         if (request.method === 'DELETE' && mediaMatch) {
-          if (!requireUser()) return;
+          if (!requireAdmin()) return;
           const item = data.media.find(media => media.id === mediaMatch[1]);
           if (!item) return respond(404, { error: 'This match photo or video could not be found.' });
-          if (!isAdmin && item.memberId !== currentUser.id) return respond(403, { error: 'You can only remove your own uploads.' });
           await mediaStore.remove(item.objectPath);
           data.media = data.media.filter(media => media.id !== item.id);
           await dataStore.save(data);
@@ -948,13 +950,13 @@ function createAppServer({
         }
         const paymentMatch = pathname.match(/^\/api\/payments\/([^/]+)\/([^/]+)$/);
         if (request.method === 'POST' && paymentMatch) {
-          if (!requireUser()) return;
+          if (!requireAdmin()) return;
           const [, eventId, memberId] = paymentMatch;
           const body = await readBody(request);
+          if (typeof body.paid !== 'boolean') return respond(400, { error: 'Choose paid or unpaid to update the contribution.' });
           const event = data.events.find(item => item.id === eventId);
           const member = data.members.find(item => item.id === memberId);
           if (!event || !member) return respond(404, { error: 'This match or team member could not be found.' });
-          if (!isAdmin && member.id !== currentUser.id) return respond(403, { error: 'You can only update your own contribution.' });
           const list = event.type === 'tournament' ? data.tournamentPayments : data.payments;
           const amount = event.type === 'tournament' ? Number(event.entryFee || 500) : WEEKLY_FEE;
           let payment = list.find(item => item.eventId === eventId && item.memberId === memberId);
@@ -962,7 +964,16 @@ function createAppServer({
             payment = { eventId, memberId, amount, paid: false, paidAt: null };
             list.push(payment);
           }
-          payment.paid = Boolean(body.paid);
+          const nextPaid = body.paid;
+          if (payment.paid !== nextPaid) {
+            data.paymentHistory ||= [];
+            data.paymentHistory.push({
+              id: `payment-history-${randomBytes(10).toString('hex')}`,
+              eventId, memberId, amount, paid: nextPaid,
+              changedBy: currentUser.id, changedAt: now().toISOString()
+            });
+          }
+          payment.paid = nextPaid;
           payment.amount = amount;
           payment.paidAt = payment.paid ? now().toISOString() : null;
           await dataStore.save(data);

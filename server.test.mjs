@@ -58,6 +58,11 @@ test('demo members can vote and pay while admin-only match publishing alerts the
     method: 'POST', cookie: memberCookie, body: { paid: true }
   });
   assert.equal(canOnlyPayYourself.status, 403);
+  const cannotEditOwnPayment = await send(baseUrl, `/api/payments/${saturday.id}/${initial.currentUser.id}`, {
+    method: 'POST', cookie: memberCookie, body: { paid: true }
+  });
+  assert.equal(cannotEditOwnPayment.status, 403);
+  assert.deepEqual(initial.paymentHistory, []);
 
   const adminLogin = await send(baseUrl, '/api/demo-admin-login', { method: 'POST' });
   assert.equal(adminLogin.status, 200);
@@ -139,6 +144,9 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   await send(baseUrl, `/api/payments/${saturday.id}/m-01`, {
     method: 'POST', cookie: adminCookie, body: { paid: true }
   });
+  const adminBootstrap = await (await send(baseUrl, '/api/bootstrap', { cookie: adminCookie })).json();
+  assert.equal(adminBootstrap.paymentHistory.length, 2);
+  assert.deepEqual(adminBootstrap.paymentHistory.map(entry => entry.paid), [false, true]);
 
   const scorecard = {
     eventId: saturday.id,
@@ -181,6 +189,12 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   assert.equal(after.availability[saturday.id][initial.currentUser.id], 'yes');
   assert.equal(after.events.find(item => item.id === saturday.id).cricheroesScorecardUrl, 'https://cricheroes.com/scorecard/123');
   assert.equal(after.payments.find(item => item.eventId === saturday.id && item.memberId === 'm-01').paid, true);
+  assert.deepEqual(after.paymentHistory, []);
+  assert.equal(after.scorecards.length, 1);
+  const adminAfter = await (await send(baseUrl, '/api/bootstrap', { cookie: adminCookie })).json();
+  assert.equal(adminAfter.scorecards.length, 1);
+  assert.equal(adminAfter.scorecards[0].players.find(player => player.memberId === 'm-01').runs, 20);
+  assert.equal(adminAfter.paymentHistory.length, 2);
   assert.equal(after.members.find(item => item.id === 'm-01').matches, 18);
   assert.equal(after.members.find(item => item.id === 'm-01').average, 37);
   assert.equal(after.members.find(item => item.id === 'm-01').wickets, 13);
@@ -348,6 +362,9 @@ test('match media is private to signed-in members and removable by its owner or 
   const ownerId = (await ownerUpload.json()).id;
   assert.equal((await fetch(`${baseUrl}/api/media/${ownerId}`, {
     method: 'DELETE', headers: { cookie: memberCookie }
+  })).status, 403);
+  assert.equal((await fetch(`${baseUrl}/api/media/${ownerId}`, {
+    method: 'DELETE', headers: { cookie: adminCookie }
   })).status, 200);
   assert.deepEqual(await (await send(baseUrl, '/api/media', { cookie: memberCookie })).json(), []);
 

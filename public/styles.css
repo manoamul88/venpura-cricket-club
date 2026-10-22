@@ -195,6 +195,11 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; }
 .empty-state { padding: 25px 14px; color: var(--muted); font-size: 11px; text-align: center; }
 
 .admin-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px,.9fr); align-items: start; gap: 17px; }
+.admin-history-card { grid-column: 1 / -1; }
+.history-heading { margin: 20px 18px 8px; font: 700 14px 'Manrope', sans-serif; }
+.scorecard-history { margin: 0 18px 15px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; }
+.scorecard-history h4 { margin: 0; padding: 11px 12px; background: #f7f9fb; font-size: 13px; }
+.scorecard-history .admin-table { margin: 0; }
 .form-card { padding: 19px; }
 .field-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
 .field { display: grid; gap: 6px; }

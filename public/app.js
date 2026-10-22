@@ -8,6 +8,7 @@ const state = {
   events: [],
   payments: [],
   tournamentPayments: [],
+  paymentHistory: [],
   scorecards: [],
   availability: {},
   notifications: [],
@@ -119,6 +120,7 @@ async function refreshData({ preserveNotificationState = true } = {}) {
   state.events = data.events;
   state.payments = data.payments;
   state.tournamentPayments = data.tournamentPayments;
+  state.paymentHistory = data.paymentHistory || [];
   state.scorecards = data.scorecards;
   state.availability = data.availability;
   state.notifications = data.notifications.filter(item => !item.memberId || item.memberId === state.user?.id);
@@ -424,7 +426,7 @@ function renderMatchMedia() {
     const preview = item.contentType.startsWith('video/')
       ? `<video src="${source}" controls preload="metadata" aria-label="${esc(item.caption || `${item.eventTitle} video`)}"></video>`
       : `<img src="${source}" alt="${esc(item.caption || `${item.eventTitle} photo`)}" loading="lazy">`;
-    const canDelete = state.isAdmin || item.memberId === state.user?.id;
+    const canDelete = state.isAdmin;
     return `<article class="media-card"><div class="media-preview">${preview}</div><div class="media-details"><strong>${esc(item.eventTitle)}${item.opponent ? ` vs ${esc(item.opponent)}` : ''}</strong><span>${esc(item.memberName)}${item.eventDate ? ` · ${esc(dateParts(item.eventDate).full)}` : ''}</span>${item.caption ? `<p>${esc(item.caption)}</p>` : ''}${canDelete ? `<button class="button button-small button-danger" data-action="delete-media" data-media="${esc(item.id)}">Remove</button>` : ''}</div></article>`;
   }).join('')}</div>` : '<div class="empty-state">No match photos or videos yet. Share a moment from your next game.</div>';
   return `<section class="card media-section"><div class="card-header"><div><h2 class="card-title">From the boundary</h2><p class="card-caption">Match photos and videos, shared with the squad.</p></div><span class="badge badge-gold">${state.media.length} SHARED</span></div>
@@ -549,6 +551,16 @@ function renderAdmin() {
   const sundayBallBuyer = ballBuyerFor(sunday);
   const scorecardOptions = [...state.events].sort((a, b) => b.date.localeCompare(a.date));
   const selectedScorecardMatch = scorecardOptions[0];
+  const paymentRows = [...state.payments, ...state.tournamentPayments]
+    .map(payment => ({
+      payment,
+      event: state.events.find(item => item.id === payment.eventId),
+      member: state.members.find(item => item.id === payment.memberId)
+    }))
+    .filter(item => item.event && item.member)
+    .sort((a, b) => b.event.date.localeCompare(a.event.date) || a.member.name.localeCompare(b.member.name));
+  const paymentAudit = [...state.paymentHistory].sort((a, b) => b.changedAt.localeCompare(a.changedAt));
+  const scorecardHistory = [...state.scorecards].sort((a, b) => b.date.localeCompare(a.date));
   return `
     <div class="stats-grid">
       <div class="stat-card"><span class="stat-symbol">◉</span><div><div class="stat-label">SQUAD SIZE</div><div class="stat-value">${state.members.length}</div><div class="stat-footnote">current players</div></div></div>
@@ -597,6 +609,25 @@ function renderAdmin() {
           <div class="modal-footer"><button class="button button-primary" type="submit">Save scorecard link →</button></div>
           <p class="field-help">Paste the match/scorecard link copied from CricHeroes. Leave it blank to remove the link. CricHeroes does not provide a verified public API here, so score details open on their official app/site rather than being embedded in VENPURA.</p>
         </form>` : '<div class="empty-state">Add a fixture before linking its CricHeroes scorecard.</div>'}
+      </section>
+      <section class="card admin-history-card"><div class="card-header"><div><h2 class="card-title">Club records & history</h2><p class="card-caption">All recorded contributions and player scorecards are retained. Payment changes are logged from now on; earlier payment changes cannot be reconstructed.</p></div></div>
+        <h3 class="history-heading">Contribution records (${paymentRows.length})</h3>
+        ${paymentRows.length ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>FIXTURE</th><th>DATE</th><th>PLAYER</th><th>AMOUNT</th><th>STATUS</th><th>UPDATED</th></tr></thead><tbody>${paymentRows.map(({ payment, event, member }) => `<tr><td>${esc(event.title)} · ${esc(event.opponent)}</td><td>${esc(dateParts(event.date).full)}</td><td>${esc(member.name)}</td><td>₹${Number(payment.amount).toLocaleString('en-IN')}</td><td>${payment.paid ? 'Paid' : 'Unpaid'}</td><td>${payment.paidAt ? esc(new Date(payment.paidAt).toLocaleDateString('en-IN')) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">No contribution records yet.</div>'}
+        <h3 class="history-heading">Payment status change log (${paymentAudit.length})</h3>
+        ${paymentAudit.length ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>CHANGED</th><th>FIXTURE</th><th>PLAYER</th><th>AMOUNT</th><th>STATUS</th><th>RECORDED BY</th></tr></thead><tbody>${paymentAudit.map(entry => {
+          const event = state.events.find(item => item.id === entry.eventId);
+          const member = state.members.find(item => item.id === entry.memberId);
+          const actor = state.members.find(item => item.id === entry.changedBy);
+          return `<tr><td>${esc(new Date(entry.changedAt).toLocaleString('en-IN'))}</td><td>${esc(event ? `${event.title} · ${event.opponent}` : 'Archived fixture')}</td><td>${esc(member?.name || 'Former player')}</td><td>₹${Number(entry.amount).toLocaleString('en-IN')}</td><td>${entry.paid ? 'Marked paid' : 'Marked unpaid'}</td><td>${esc(actor?.name || 'Former admin')}</td></tr>`;
+        }).join('')}</tbody></table></div>` : '<div class="empty-state">New payment changes will be recorded here. Earlier status changes are not available in the audit log.</div>'}
+        <h3 class="history-heading">Player scorecards (${scorecardHistory.length})</h3>
+        ${scorecardHistory.length ? scorecardHistory.map(scorecard => {
+          const event = state.events.find(item => item.id === scorecard.eventId);
+          return `<div class="scorecard-history"><h4>${esc(event?.title || 'Match')} vs ${esc(scorecard.opponent)} · ${esc(dateParts(scorecard.date).full)}</h4><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>PLAYER</th><th>RUNS</th><th>WICKETS</th><th>PLAYED</th></tr></thead><tbody>${scorecard.players.map(entry => {
+            const member = state.members.find(item => item.id === entry.memberId);
+            return `<tr><td>${esc(member?.name || 'Former player')}</td><td>${Number(entry.runs)}</td><td>${Number(entry.wickets)}</td><td>${entry.played ? 'Yes' : 'No'}</td></tr>`;
+          }).join('')}</tbody></table></div></div>`;
+        }).join('') : '<div class="empty-state">No scorecards have been recorded yet.</div>'}
       </section>
     </div>`;
 }
