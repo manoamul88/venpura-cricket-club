@@ -332,6 +332,7 @@ function personCell(member) {
 
 function ballBuyerFor(event) {
   if (!event) return null;
+  if (event.ballBuyerId) return state.members.find(member => member.id === event.ballBuyerId) || null;
   const sundays = state.events.filter(item => item.type === 'weekend' && dateParts(item.date).date.getDay() === 0 && item.date >= new Date().toLocaleDateString('en-CA'))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const index = sundays.findIndex(item => item.id === event.id);
@@ -340,10 +341,11 @@ function ballBuyerFor(event) {
 
 function ballDutyCard(event) {
   const buyer = ballBuyerFor(event);
+  const adminSelectedBuyer = Boolean(event?.ballBuyerId);
   return `
     <section class="card">
-      <div class="card-header"><div><h2 class="card-title">The Sunday ball</h2><p class="card-caption">The turn moves down the squad, A to Z.</p></div><span class="badge badge-gold">SUNDAY</span></div>
-      ${buyer ? `<div class="ball-duty"><div class="duty-person"><span class="duty-avatar">${esc(initials(buyer.name))}</span><div><div class="duty-name">${esc(buyer.name)}</div><div class="duty-meta">${esc(dateParts(event.date).full)} · ${esc(event.venue)}</div></div></div><p class="duty-note">It’s ${esc(buyer.firstName)}’s turn to bring the ball. We’ll send a reminder every Monday before the Sunday fixture.</p></div>` : '<div class="empty-state">No Sunday fixture is on the calendar just yet.</div>'}
+      <div class="card-header"><div><h2 class="card-title">The Sunday ball</h2><p class="card-caption">${adminSelectedBuyer ? 'The admin has selected this match’s ball buyer.' : 'The turn moves down the squad, A to Z.'}</p></div><span class="badge badge-gold">SUNDAY</span></div>
+      ${buyer ? `<div class="ball-duty"><div class="duty-person"><span class="duty-avatar">${esc(initials(buyer.name))}</span><div><div class="duty-name">${esc(buyer.name)}</div><div class="duty-meta">${esc(dateParts(event.date).full)} · ${esc(event.venue)}</div></div></div><p class="duty-note">${adminSelectedBuyer ? `${esc(buyer.firstName)} is buying the ball for this Sunday match.` : `It’s ${esc(buyer.firstName)}’s turn to bring the ball.`} We’ll send a reminder every Monday before the Sunday fixture.</p></div>` : '<div class="empty-state">No Sunday fixture is on the calendar just yet.</div>'}
     </section>`;
 }
 
@@ -525,7 +527,9 @@ function renderStats() {
 function renderAdmin() {
   const upcoming = sortedUpcoming();
   const saturday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 6);
+  const sunday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 0);
   const payments = saturday ? eventPayments(saturday) : [];
+  const sundayBallBuyer = ballBuyerFor(sunday);
   const scorecardOptions = [...state.events].sort((a, b) => b.date.localeCompare(a.date));
   const selectedScorecardMatch = scorecardOptions[0];
   return `
@@ -544,6 +548,7 @@ function renderAdmin() {
           <label class="field"><span class="field-label">Opponent *</span><input class="field-input" name="opponent" required placeholder="e.g. Riverside XI"></label>
           <label class="field"><span class="field-label">Ground *</span><input class="field-input" name="venue" required placeholder="e.g. VENPURA Sports Ground"></label>
           <label class="field field-wide"><span class="field-label">Ground notes</span><input class="field-input" name="address" placeholder="Pitch, pavilion or directions"></label>
+          <label class="field field-wide sunday-ball-buyer-field" hidden><span class="field-label">Sunday Ball buyer</span><select class="field-input" name="ballBuyerId"><option value="">Auto-assign alphabetically</option>${membersByName().map(member => `<option value="${esc(member.id)}">${esc(member.name)}</option>`).join('')}</select><span class="field-help">Choose the player buying the ball, or keep the automatic alphabetical rotation.</span></label>
           <label class="field field-wide tournament-fee-field" hidden><span class="field-label">Tournament entry fee per player (₹)</span><input class="field-input" name="entryFee" type="number" min="0" value="500"></label>
           <label class="field field-wide tournament-title-field" hidden><span class="field-label">Tournament name</span><input class="field-input" name="title" placeholder="e.g. City Weekend Cup"></label>
         </div><div class="modal-footer"><button class="button button-primary" type="submit">Publish fixture to the squad →</button></div><p class="field-help">Choose Saturday or Sunday separately and select a date matching that day. Tournaments can be scheduled on either day. Publishing alerts every team member.</p></form>
@@ -553,6 +558,9 @@ function renderAdmin() {
           const payment = payments.find(item => item.memberId === member.id);
           return `<tr><td>${esc(member.name)}</td><td>₹30</td><td><button class="button button-small ${payment?.paid ? 'button-soft' : ''}" data-action="payment" data-event="${esc(saturday.id)}" data-member="${esc(member.id)}" data-paid="${payment?.paid ? 'false' : 'true'}">${payment?.paid ? 'Mark unpaid' : 'Mark paid'}</button></td></tr>`;
         }).join('')}</tbody></table></div>` : '<div class="empty-state">Add a Saturday fixture to start.</div>'}
+      </section>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">Sunday Ball buyer</h2><p class="card-caption">${sunday ? esc(dateParts(sunday.date).full) : 'No Sunday match scheduled.'}</p></div></div>
+        ${sunday && sundayBallBuyer ? `<div class="ball-duty"><div class="duty-person"><span class="duty-avatar">${esc(initials(sundayBallBuyer.name))}</span><div><div class="duty-name">${esc(sundayBallBuyer.name)}</div><div class="duty-meta">${sunday.ballBuyerId ? 'Selected for this match' : 'Alphabetical rotation'} · ${esc(sunday.venue)}</div></div></div></div>` : '<div class="empty-state">Publish a Sunday match to assign its ball buyer.</div>'}
       </section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">The next few weekends</h2><p class="card-caption">Your team’s calendar at a glance.</p></div></div>
         ${upcoming.slice(0, 6).map(event => `<div class="fee-event"><div><div class="fee-event-name">${esc(event.title)} · ${esc(event.opponent)}</div><div class="fee-event-date">${esc(dateParts(event.date).full)} at ${esc(timeLabel(event.time))} · ${esc(event.venue)}</div></div><span class="badge ${event.type === 'tournament' ? 'badge-gold' : ''}">${event.type === 'tournament' ? 'TOURNAMENT' : 'MATCH'}</span></div>`).join('') || '<div class="empty-state">Your calendar is ready for its first match.</div>'}
@@ -907,10 +915,13 @@ document.addEventListener('submit', async event => {
 document.addEventListener('change', event => {
   if (event.target.name === 'type' && event.target.form?.id === 'fixture-form') {
     const tournament = event.target.value === 'tournament';
+    const sunday = event.target.value === 'sunday';
     const fee = document.querySelector('.tournament-fee-field');
     const title = document.querySelector('.tournament-title-field');
+    const ballBuyer = document.querySelector('.sunday-ball-buyer-field');
     fee.hidden = !tournament;
     title.hidden = !tournament;
+    ballBuyer.hidden = !sunday;
     const date = event.target.form.elements.date;
     const matchDay = event.target.value;
     if (!date.value || !['saturday', 'sunday'].includes(matchDay)) {

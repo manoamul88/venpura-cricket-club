@@ -380,7 +380,9 @@ function ensureMondayBallReminder(data, now = new Date()) {
   if (!sunday) return false;
   const sentKey = `${indiaDate(now)}:${sunday.id}`;
   if (data.ballRemindersSent.includes(sentKey)) return false;
-  const assignee = nextBallBuyer(data, sunday, now);
+  const assignee = sunday.ballBuyerId
+    ? data.members.find(member => member.id === sunday.ballBuyerId)
+    : nextBallBuyer(data, sunday, now);
   if (!assignee) return false;
   data.notifications.unshift({
     id: `ball-reminder-${sentKey}`, title: 'Sunday match ball reminder',
@@ -934,6 +936,11 @@ function createAppServer({
           const opponent = String(body.opponent || '').trim();
           const venue = String(body.venue || '').trim();
           if (!opponent || !venue) return respond(400, { error: 'Opponent and ground are both required.' });
+          const isSundayMatch = type === 'weekend' && selectedDay === 0;
+          const ballBuyerId = String(body.ballBuyerId || '');
+          if (isSundayMatch && ballBuyerId && !data.members.some(member => member.id === ballBuyerId)) {
+            return respond(400, { error: 'Choose a valid player as the Sunday ball buyer.' });
+          }
           const event = {
             id: `fixture-${randomBytes(7).toString('hex')}`,
             title: type === 'tournament' ? String(body.title || 'Team tournament').trim()
@@ -942,6 +949,7 @@ function createAppServer({
             address: String(body.address || ''), entryFee: type === 'tournament' ? Math.max(0, Number(body.entryFee) || 500) : null,
             createdAt: now().toISOString()
           };
+          if (isSundayMatch && ballBuyerId) event.ballBuyerId = ballBuyerId;
           data.events.push(event);
           if (type === 'weekend' && new Date(`${date}T12:00:00`).getDay() === 6) {
             data.members.forEach(member => data.payments.push({ eventId: event.id, memberId: member.id, amount: WEEKLY_FEE, paid: false, paidAt: null }));

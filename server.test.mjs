@@ -109,6 +109,23 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   });
   assert.equal(published.status, 201);
   const publishedMatch = await published.json();
+  const publishedSunday = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: {
+      type: 'sunday', date: '2026-11-01', opponent: 'Sunday XI',
+      venue: 'Oval', ballBuyerId: 'm-03'
+    }
+  });
+  assert.equal(publishedSunday.status, 201);
+  assert.equal((await publishedSunday.json()).event.ballBuyerId, 'm-03');
+  const invalidBallBuyer = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: {
+      type: 'sunday', date: '2026-11-01', opponent: 'Sunday XI',
+      venue: 'Oval', ballBuyerId: 'unknown-player'
+    }
+  });
+  assert.equal(invalidBallBuyer.status, 400);
 
   const adminPaidShare = await send(baseUrl, `/api/payments/${saturday.id}/m-01`, {
     method: 'POST', cookie: adminCookie, body: { paid: true }
@@ -219,6 +236,16 @@ test('availability stays open for upcoming matches and Monday ball reminders rot
   assert.match(reminder.message, /Aarav Desai/);
   assert.equal(ensureMondayBallReminder(data, monday), false);
   assert.equal(data.notifications.filter(item => item.id === reminder.id).length, 1);
+
+  const assignedData = seedData();
+  assignedData.events = [{
+    id: 'assigned-sunday', title: 'Sunday fixture', opponent: 'Rivals XI',
+    type: 'weekend', date: '2026-10-25', time: '08:00', venue: 'Oval', ballBuyerId: 'm-02'
+  }];
+  assert.equal(ensureMondayBallReminder(assignedData, monday), true);
+  const assignedReminder = assignedData.notifications.find(item => item.id === 'ball-reminder-2026-10-19:assigned-sunday');
+  assert.equal(assignedReminder.memberId, 'm-02');
+  assert.match(assignedReminder.message, /Aditya Joshi/);
 });
 
 test('Monday payment reminders reach only unpaid players for matches in the coming week, once', () => {
