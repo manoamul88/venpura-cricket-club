@@ -43,7 +43,8 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
   if (!includeSamples) {
     return {
       members: [], events: [], payments: [], tournamentPayments: [], paymentHistory: [], scorecards: [],
-      availability: {}, notifications: [], ballRemindersSent: [], paymentRemindersSent: [], media: []
+      availability: {}, notifications: [], ballRemindersSent: [], paymentRemindersSent: [],
+      availabilityRemindersSent: [], media: []
     };
   }
   const members = [
@@ -84,7 +85,7 @@ function seedData({ includeSamples = DEFAULT_ENV !== 'production' } = {}) {
     notifications: [
       { id: 'welcome-note', title: 'Welcome to VENPURA', message: 'Your club hub is ready. Confirm your availability for the upcoming weekend fixtures.', createdAt: new Date().toISOString(), read: false }
     ],
-    ballRemindersSent: [], paymentRemindersSent: [], media: []
+    ballRemindersSent: [], paymentRemindersSent: [], availabilityRemindersSent: [], media: []
   };
 }
 
@@ -105,6 +106,7 @@ async function loadData(dataFile, seedOptions) {
       notifications: Array.isArray(saved.notifications) ? saved.notifications : base.notifications,
       ballRemindersSent: Array.isArray(saved.ballRemindersSent) ? saved.ballRemindersSent : [],
       paymentRemindersSent: Array.isArray(saved.paymentRemindersSent) ? saved.paymentRemindersSent : [],
+      availabilityRemindersSent: Array.isArray(saved.availabilityRemindersSent) ? saved.availabilityRemindersSent : [],
       media: Array.isArray(saved.media) ? saved.media : []
     };
   } catch (error) {
@@ -164,6 +166,7 @@ function createSupabaseStore({ url, serviceRoleKey, fetchImpl = fetch }) {
         notifications: Array.isArray(state.notifications) ? state.notifications : base.notifications,
         ballRemindersSent: Array.isArray(state.ballRemindersSent) ? state.ballRemindersSent : [],
         paymentRemindersSent: Array.isArray(state.paymentRemindersSent) ? state.paymentRemindersSent : [],
+        availabilityRemindersSent: Array.isArray(state.availabilityRemindersSent) ? state.availabilityRemindersSent : [],
         media: Array.isArray(state.media) ? state.media : [],
         _revision: revision
       };
@@ -432,6 +435,36 @@ function ensureMondayPaymentReminders(data, now = new Date()) {
   return created;
 }
 
+function ensureDailyAvailabilityReminders(data, now = new Date()) {
+  data.availabilityRemindersSent ||= [];
+  const today = indiaDate(now);
+  const upcomingEvents = data.events.filter(event =>
+    event.date >= today && (event.type === 'weekend' || event.type === 'tournament')
+  ).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  let created = false;
+
+  for (const member of data.members) {
+    const sentKey = `${today}:${member.id}`;
+    if (data.availabilityRemindersSent.includes(sentKey)) continue;
+    const pendingEvents = upcomingEvents.filter(event =>
+      !['yes', 'no'].includes(data.availability[event.id]?.[member.id])
+    );
+    if (!pendingEvents.length) continue;
+    const matchList = pendingEvents
+      .map(event => `${event.title} vs ${event.opponent} (${event.date})`)
+      .join('; ');
+    data.notifications.unshift({
+      id: `availability-reminder-${sentKey}`,
+      title: 'Update your match availability',
+      message: `${member.name}, please answer Yes or No for your upcoming match${pendingEvents.length > 1 ? 'es' : ''}: ${matchList}. Open VENPURA to update your availability.`,
+      createdAt: now.toISOString(), read: false, memberId: member.id
+    });
+    data.availabilityRemindersSent.push(sentKey);
+    created = true;
+  }
+  return created;
+}
+
 function getSession(request, sessions, data) {
   const cookie = request.headers.cookie || '';
   const token = cookie.split(';').map(part => part.trim()).find(part => part.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1);
@@ -570,10 +603,6 @@ function createAppServer({
             await dataStore.save(data);
           }
         }
-        const monday = now();
-        const createdBallReminder = ensureMondayBallReminder(data, monday);
-        const createdPaymentReminders = ensureMondayPaymentReminders(data, monday);
-        if (createdBallReminder || createdPaymentReminders) await dataStore.save(data);
         const currentUser = getSession(request, sessions, data);
         const isAdmin = Boolean(currentUser?.isAdmin);
         const respond = (status, body, headers) => sendJson(response, status, body, headers);
@@ -1101,7 +1130,8 @@ function createAppServer({
       const monday = now();
       const createdBallReminder = ensureMondayBallReminder(data, monday);
       const createdPaymentReminders = ensureMondayPaymentReminders(data, monday);
-      if (createdBallReminder || createdPaymentReminders) await dataStore.save(data);
+      const createdAvailabilityReminders = ensureDailyAvailabilityReminders(data, monday);
+      if (createdBallReminder || createdPaymentReminders || createdAvailabilityReminders) await dataStore.save(data);
     } catch (error) {
       console.error(`Could not create scheduled VENPURA match reminders: ${error.message}`);
     }
@@ -1122,4 +1152,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   });
 }
 
-export { createAppServer, createSupabaseStore, ensureMondayBallReminder, ensureMondayPaymentReminders, nextBallBuyer, seedData };
+export { createAppServer, createSupabaseStore, ensureDailyAvailabilityReminders, ensureMondayBallReminder, ensureMondayPaymentReminders, nextBallBuyer, seedData };

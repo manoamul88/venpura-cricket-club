@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createAppServer, createSupabaseStore, ensureMondayBallReminder, ensureMondayPaymentReminders, seedData } from './server.mjs';
+import { createAppServer, createSupabaseStore, ensureDailyAvailabilityReminders, ensureMondayBallReminder, ensureMondayPaymentReminders, seedData } from './server.mjs';
 
 function send(baseUrl, pathname, { method = 'GET', body, cookie } = {}) {
   return fetch(`${baseUrl}${pathname}`, {
@@ -284,6 +284,38 @@ test('Monday payment reminders reach only unpaid players for matches in the comi
   assert.equal(reminders.some(item => item.memberId === 'm-01' && item.message.includes(tournament.title)), false);
   assert.equal(ensureMondayPaymentReminders(data, monday), false);
   assert.equal(data.notifications.filter(item => item.id.startsWith('payment-reminder-')).length, 2);
+});
+
+test('daily availability reminders target only players with unanswered upcoming fixtures and deduplicate by day', () => {
+  const data = seedData();
+  data.events = [
+    { id: 'saturday', title: 'Saturday match', opponent: 'Rivals XI', type: 'weekend', date: '2026-10-24' },
+    { id: 'sunday', title: 'Sunday match', opponent: 'Mavericks CC', type: 'weekend', date: '2026-10-25' },
+    { id: 'past-match', title: 'Past match', opponent: 'Old XI', type: 'weekend', date: '2026-10-23' }
+  ];
+  data.availability = {
+    saturday: { 'm-01': 'yes', 'm-02': 'no', 'm-03': 'yes' },
+    sunday: { 'm-02': 'no', 'm-03': 'yes' },
+    'past-match': {}
+  };
+  const today = new Date('2026-10-24T09:00:00+05:30');
+
+  assert.equal(ensureDailyAvailabilityReminders(data, today), true);
+  const reminders = data.notifications.filter(item => item.id.startsWith('availability-reminder-'));
+  assert.equal(reminders.length, 7);
+  const aaravReminder = reminders.find(item => item.memberId === 'm-01');
+  assert.ok(aaravReminder);
+  assert.match(aaravReminder.message, /Sunday match vs Mavericks CC/);
+  assert.doesNotMatch(aaravReminder.message, /Saturday match vs Rivals XI/);
+  assert.equal(reminders.some(item => item.memberId === 'm-02' || item.memberId === 'm-03'), false);
+  assert.equal(ensureDailyAvailabilityReminders(data, today), false);
+
+  const tomorrow = new Date('2026-10-25T09:00:00+05:30');
+  assert.equal(ensureDailyAvailabilityReminders(data, tomorrow), true);
+  assert.equal(
+    data.notifications.filter(item => item.id.startsWith('availability-reminder-')).length,
+    14
+  );
 });
 
 test('match media is private to signed-in members and removable by its owner or admin', async t => {
