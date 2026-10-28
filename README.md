@@ -27,6 +27,7 @@ The free hosting tiers can sleep or pause and are intended for a small team/demo
    - `VENPURA_ADMIN_PASSWORD`: set a unique, strong password of at least 12 characters.
    - `SUPABASE_URL`: your Supabase project URL.
    - `SUPABASE_SERVICE_ROLE_KEY`: your private Supabase Secret key (`sb_secret_...`) or legacy `service_role` key.
+   - `PUBLIC_APP_URL`: the final HTTPS URL Render assigns to the service after deployment, such as `https://your-service.onrender.com`.
    - `SMTP_USER`: the Gmail address that will send password-reset email.
    - `SMTP_PASSWORD`: a Google App Password for that Gmail account, not its normal sign-in password.
    - `SMTP_FROM`: `VENPURA <your-email@gmail.com>` using the same Gmail address.

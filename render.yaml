@@ -21,7 +21,7 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: PUBLIC_APP_URL
-        value: https://venpura-cricket-club.onrender.com
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
