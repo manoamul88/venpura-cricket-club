@@ -295,7 +295,7 @@ function fixtureCard(event) {
         <div class="versus">VS</div>
         <div class="team-away"><div class="team-name">${esc(event.opponent)}</div><div class="team-caption">${esc(event.title)}</div></div>
       </div>
-      <div class="match-detail-row"><span>◷ &nbsp;${esc(timeLabel(event.time))}</span><span>⌖ &nbsp;${esc(event.venue)}</span>${event.type === 'tournament' ? `<span>₹ &nbsp;₹${Number(event.entryFee || 500).toLocaleString('en-IN')} entry</span>` : ''}</div>
+      <div class="match-detail-row"><span>◷ &nbsp;${esc(timeLabel(event.time))}</span><span>⌖ &nbsp;${esc(event.venue)}</span>${event.type === 'tournament' ? `<span>₹ &nbsp;₹${Number(event.entryFee ?? 500).toLocaleString('en-IN')} entry</span>` : ''}</div>
       ${event.address ? `<div class="section-banner"><span>✦</span><span>${esc(event.address)}</span></div>` : ''}
       <div class="match-footer">
         <span class="vote-label">${myVote
@@ -322,7 +322,7 @@ function contributorsCard(event, compact = false, canManage = false) {
   if (!event) return `<section class="card"><div class="card-header"><div><h2 class="card-title">Match-day kitty</h2><p class="card-caption">Shared, fair and easy to follow.</p></div></div><div class="empty-state">Add a Saturday fixture to start the ₹30 match fund.</div></section>`;
   const list = eventPayments(event);
   const paidCount = list.filter(payment => payment.paid).length;
-  const amount = event.type === 'tournament' ? Number(event.entryFee || 500) : 30;
+  const amount = event.type === 'tournament' ? Number(event.entryFee ?? 500) : Number(event.matchFee ?? 30);
   const totalPaid = list.filter(payment => payment.paid).reduce((total, item) => total + item.amount, 0);
   const totalExpected = amount * state.members.length;
   const paidRatio = totalExpected ? Math.round(totalPaid / totalExpected * 100) : 0;
@@ -340,7 +340,7 @@ function contributorsCard(event, compact = false, canManage = false) {
           : payment?.paid ? '<span class="paid-status">✓ Paid</span>' : '<span class="unpaid-status">Unpaid</span>';
         return `<div class="contributor-row">${personCell(member)}<span class="amount">₹${amount}</span>${status}</div>`;
       }).join('')}</div>
-      ${compact ? '' : `<div class="card-header"><span class="field-help">${event.type === 'tournament' ? 'A transparent tally of every tournament entry.' : 'Every Saturday, each of us chips in ₹30.'}</span></div>`}
+      ${compact ? '' : `<div class="card-header"><span class="field-help">${event.type === 'tournament' ? 'A transparent tally of every tournament entry.' : `Every Saturday, each of us chips in ₹${amount}.`}</span></div>`}
     </section>`;
 }
 
@@ -374,7 +374,7 @@ function renderHome() {
   const sunday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 0);
   const saturdayPayments = saturday ? eventPayments(saturday) : [];
   const totalCollected = saturdayPayments.filter(payment => payment.paid).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const target = saturday ? 30 * state.members.length : 0;
+  const target = saturday ? Number(saturday.matchFee ?? 30) * state.members.length : 0;
   return `
     <section class="stats-grid" aria-label="Team at a glance">
       <div class="stat-card"><span class="stat-symbol">▦</span><div><div class="stat-label">UP NEXT</div><div class="stat-value">${upcoming.length}</div><div class="stat-footnote">matches on the calendar</div></div></div>
@@ -407,7 +407,7 @@ function renderTournamentSummary(upcoming = sortedUpcoming()) {
   const paid = eventPayments(next).filter(payment => payment.paid).length;
   return `<section class="card">
     <div class="card-header"><div><h2 class="card-title">A little something extra</h2><p class="card-caption">Our next tournament.</p></div><span class="badge badge-gold">✦ CUP</span></div>
-    <div class="fee-event"><div><div class="fee-event-name">${esc(next.title)}</div><div class="fee-event-date">${esc(dateParts(next.date).full)} · ${esc(next.venue)}</div></div><div class="fee-event-right"><div class="amount">₹${Number(next.entryFee || 500).toLocaleString('en-IN')}</div><div class="person-role">${paid}/${state.members.length} entries paid</div></div></div>
+    <div class="fee-event"><div><div class="fee-event-name">${esc(next.title)}</div><div class="fee-event-date">${esc(dateParts(next.date).full)} · ${esc(next.venue)}</div></div><div class="fee-event-right"><div class="amount">₹${Number(next.entryFee ?? 500).toLocaleString('en-IN')}</div><div class="person-role">${paid}/${state.members.length} entries paid</div></div></div>
     <div class="card-header"><span class="field-help">Entry fees are listed by player in Contributions.</span><button class="text-link" data-nav="money">See fees →</button></div>
   </section>`;
 }
@@ -543,6 +543,25 @@ function renderStats() {
     </div>`;
 }
 
+function fixtureForm(event = null) {
+  const day = event?.type === 'weekend' ? new Date(`${event.date}T12:00:00Z`).getUTCDay() : null;
+  const selectedType = !event ? 'saturday' : event.type === 'tournament' ? 'tournament' : day === 0 ? 'sunday' : 'saturday';
+  const isEditing = Boolean(event);
+  return `<form id="fixture-form" class="form-card"><div class="field-grid">
+    ${isEditing ? `<input type="hidden" name="eventId" value="${esc(event.id)}">` : ''}
+    <label class="field field-wide"><span class="field-label">Fixture type</span><select class="field-input" name="type"><option value="saturday" ${selectedType === 'saturday' ? 'selected' : ''}>Saturday match</option><option value="sunday" ${selectedType === 'sunday' ? 'selected' : ''}>Sunday match</option><option value="tournament" ${selectedType === 'tournament' ? 'selected' : ''}>Tournament</option></select></label>
+    <label class="field"><span class="field-label">Date *</span><input class="field-input" name="date" type="date" required value="${esc(event?.date || '')}"></label>
+    <label class="field"><span class="field-label">Start time</span><input class="field-input" name="time" type="time" value="${esc(event?.time || '07:30')}"></label>
+    <label class="field"><span class="field-label">Opponent *</span><input class="field-input" name="opponent" required value="${esc(event?.opponent || '')}" placeholder="e.g. Riverside XI"></label>
+    <label class="field"><span class="field-label">Ground *</span><input class="field-input" name="venue" required value="${esc(event?.venue || '')}" placeholder="e.g. VENPURA Sports Ground"></label>
+    <label class="field field-wide"><span class="field-label">Ground notes</span><input class="field-input" name="address" value="${esc(event?.address || '')}" placeholder="Pitch, pavilion or directions"></label>
+    <label class="field field-wide sunday-ball-buyer-field" ${selectedType === 'sunday' ? '' : 'hidden'}><span class="field-label">Sunday Ball buyer</span><select class="field-input" name="ballBuyerId"><option value="">Auto-assign alphabetically</option>${membersByName().map(member => `<option value="${esc(member.id)}" ${event?.ballBuyerId === member.id ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}</select><span class="field-help">Choose the player buying the ball, or keep the automatic alphabetical rotation.</span></label>
+    <label class="field field-wide match-fee-field" ${selectedType === 'saturday' ? '' : 'hidden'}><span class="field-label">Saturday contribution per player (₹)</span><input class="field-input" name="matchFee" type="number" min="0" max="1000000" step="1" value="${Number(event?.matchFee ?? 30)}"></label>
+    <label class="field field-wide tournament-fee-field" ${selectedType === 'tournament' ? '' : 'hidden'}><span class="field-label">Tournament entry fee per player (₹)</span><input class="field-input" name="entryFee" type="number" min="0" max="1000000" step="1" value="${Number(event?.entryFee ?? 500)}"></label>
+    <label class="field field-wide tournament-title-field" ${selectedType === 'tournament' ? '' : 'hidden'}><span class="field-label">Tournament name</span><input class="field-input" name="title" maxlength="120" value="${esc(event?.title || '')}" placeholder="e.g. City Weekend Cup"></label>
+  </div><div class="modal-footer"><button class="button button-primary" type="submit">${isEditing ? 'Save fixture changes →' : 'Publish fixture to the squad →'}</button></div><p class="field-help">${isEditing ? 'Changing a fee updates the assigned amount for every player and keeps their paid/unpaid status.' : 'Choose Saturday or Sunday separately and select a date matching that day. Tournaments can be scheduled on either day. Publishing alerts every team member.'}</p></form>`;
+}
+
 function renderAdmin() {
   const upcoming = sortedUpcoming();
   const saturday = upcoming.find(event => event.type === 'weekend' && dateParts(event.date).date.getDay() === 6);
@@ -569,23 +588,11 @@ function renderAdmin() {
       <div class="stat-card"><span class="stat-symbol">♧</span><div><div class="stat-label">SQUAD NOTICES</div><div class="stat-value">${state.notifications.length}</div><div class="stat-footnote">in-app notifications</div></div></div>
     </div>
     <div class="admin-grid">
-      <section class="card"><div class="card-header"><div><h2 class="card-title">Put a fixture on the calendar</h2><p class="card-caption">Every player gets an in-app match notification.</p></div></div>
-        <form id="fixture-form" class="form-card"><div class="field-grid">
-          <label class="field field-wide"><span class="field-label">Fixture type</span><select class="field-input" name="type"><option value="saturday">Saturday match</option><option value="sunday">Sunday match</option><option value="tournament">Tournament</option></select></label>
-          <label class="field"><span class="field-label">Date *</span><input class="field-input" name="date" type="date" required></label>
-          <label class="field"><span class="field-label">Start time</span><input class="field-input" name="time" type="time" value="07:30"></label>
-          <label class="field"><span class="field-label">Opponent *</span><input class="field-input" name="opponent" required placeholder="e.g. Riverside XI"></label>
-          <label class="field"><span class="field-label">Ground *</span><input class="field-input" name="venue" required placeholder="e.g. VENPURA Sports Ground"></label>
-          <label class="field field-wide"><span class="field-label">Ground notes</span><input class="field-input" name="address" placeholder="Pitch, pavilion or directions"></label>
-          <label class="field field-wide sunday-ball-buyer-field" hidden><span class="field-label">Sunday Ball buyer</span><select class="field-input" name="ballBuyerId"><option value="">Auto-assign alphabetically</option>${membersByName().map(member => `<option value="${esc(member.id)}">${esc(member.name)}</option>`).join('')}</select><span class="field-help">Choose the player buying the ball, or keep the automatic alphabetical rotation.</span></label>
-          <label class="field field-wide tournament-fee-field" hidden><span class="field-label">Tournament entry fee per player (₹)</span><input class="field-input" name="entryFee" type="number" min="0" value="500"></label>
-          <label class="field field-wide tournament-title-field" hidden><span class="field-label">Tournament name</span><input class="field-input" name="title" placeholder="e.g. City Weekend Cup"></label>
-        </div><div class="modal-footer"><button class="button button-primary" type="submit">Publish fixture to the squad →</button></div><p class="field-help">Choose Saturday or Sunday separately and select a date matching that day. Tournaments can be scheduled on either day. Publishing alerts every team member.</p></form>
-      </section>
-      <section class="card"><div class="card-header"><div><h2 class="card-title">Saturday Match</h2><p class="card-caption">${saturday ? `${esc(dateParts(saturday.date).full)} · ₹30 per person` : 'No Saturday match scheduled.'}</p></div></div>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">Put a fixture on the calendar</h2><p class="card-caption">Every player gets an in-app match notification.</p></div></div>${fixtureForm()}</section>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">Saturday Match</h2><p class="card-caption">${saturday ? `${esc(dateParts(saturday.date).full)} · ₹${Number(saturday.matchFee ?? 30)} per person` : 'No Saturday match scheduled.'}</p></div></div>
         ${saturday ? `<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>PLAYER</th><th>SHARE</th><th>STATUS</th></tr></thead><tbody>${membersByName().map(member => {
           const payment = payments.find(item => item.memberId === member.id);
-          return `<tr><td>${esc(member.name)}</td><td>₹30</td><td>${paymentToggle(saturday.id, member, payment)}</td></tr>`;
+          return `<tr><td>${esc(member.name)}</td><td>₹${Number(saturday.matchFee ?? 30)}</td><td>${paymentToggle(saturday.id, member, payment)}</td></tr>`;
         }).join('')}</tbody></table></div>` : '<div class="empty-state">Add a Saturday fixture to start.</div>'}
       </section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">Sunday Ball buyer</h2><p class="card-caption">${sunday ? esc(dateParts(sunday.date).full) : 'No Sunday match scheduled.'}</p></div></div>
@@ -594,7 +601,10 @@ function renderAdmin() {
       <section class="card"><div class="card-header"><div><h2 class="card-title">The next few weekends</h2><p class="card-caption">Your team’s calendar at a glance.</p></div></div>
         ${upcoming.slice(0, 6).map(event => `<div class="fee-event"><div><div class="fee-event-name">${esc(event.title)} · ${esc(event.opponent)}</div><div class="fee-event-date">${esc(dateParts(event.date).full)} at ${esc(timeLabel(event.time))} · ${esc(event.venue)}</div></div><span class="badge ${event.type === 'tournament' ? 'badge-gold' : ''}">${event.type === 'tournament' ? 'TOURNAMENT' : 'MATCH'}</span></div>`).join('') || '<div class="empty-state">Your calendar is ready for its first match.</div>'}
       </section>
-      <section class="card"><div class="card-header"><div><h2 class="card-title">A few small agreements</h2><p class="card-caption">Everyone plays better when the rules are clear.</p></div></div><div class="ball-duty"><p class="duty-note">• A Saturday fixture costs each player ₹30.</p><p class="duty-note">• Update your availability for upcoming matches whenever plans change.</p><p class="duty-note">• The Sunday match ball rotates alphabetically, with Monday in-app reminders.</p><p class="duty-note">• Monday reminders go to players with unpaid contributions for matches in the coming week.</p><p class="duty-note">• A tournament fee is set when the tournament is published.</p></div></section>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">Manage fixtures</h2><p class="card-caption">Edit published match and tournament details or update the amount assigned to every player.</p></div></div>
+        ${[...state.events].sort((a, b) => a.date.localeCompare(b.date)).map(event => `<div class="fee-event"><div><div class="fee-event-name">${esc(event.title)} · ${esc(event.opponent)}</div><div class="fee-event-date">${esc(dateParts(event.date).full)} at ${esc(timeLabel(event.time))} · ${esc(event.venue)}${event.type === 'tournament' ? ` · ₹${Number(event.entryFee ?? 500)} per player` : dateParts(event.date).date.getDay() === 6 ? ` · ₹${Number(event.matchFee ?? 30)} per player` : ''}</div></div><button class="button button-small" type="button" data-action="edit-fixture" data-event="${esc(event.id)}">Edit</button></div>`).join('') || '<div class="empty-state">Your calendar is ready for its first match.</div>'}
+      </section>
+      <section class="card"><div class="card-header"><div><h2 class="card-title">A few small agreements</h2><p class="card-caption">Everyone plays better when the rules are clear.</p></div></div><div class="ball-duty"><p class="duty-note">• Saturday contribution and tournament entry amounts can be edited per player from Manage fixtures.</p><p class="duty-note">• Update your availability for upcoming matches whenever plans change.</p><p class="duty-note">• The Sunday match ball rotates alphabetically, with Monday in-app reminders.</p><p class="duty-note">• Monday reminders go to players with unpaid contributions for matches in the coming week.</p></div></section>
       <section class="card"><div class="card-header"><div><h2 class="card-title">Record the scorecard</h2><p class="card-caption">Update the runs, wickets, and matches played for every player.</p></div></div>
         ${scorecardOptions.length ? `<form id="scorecard-form" class="form-card">
           <label class="field"><span class="field-label">Match</span><select class="field-input" name="eventId" required>${scorecardOptions.map(event => `<option value="${esc(event.id)}">${esc(event.title)} · ${esc(event.opponent)} · ${esc(dateParts(event.date).full)}</option>`).join('')}</select></label>
@@ -787,6 +797,12 @@ document.addEventListener('click', async event => {
       setTimeout(() => document.querySelector('#fixture-form input[name="date"]')?.focus(), 10);
       return;
     }
+    if (action === 'edit-fixture') {
+      const fixture = state.events.find(item => item.id === button.dataset.event);
+      if (!fixture) return toast('This fixture is no longer available. Refresh and try again.', true);
+      openModal('Edit published fixture', fixtureForm(fixture));
+      return;
+    }
     if (action === 'mark-read') {
       await api('/api/notifications/read', { method: 'POST' });
       await refreshData();
@@ -930,8 +946,10 @@ document.addEventListener('submit', async event => {
     try {
       await api('/api/matches', { method: 'POST', body: JSON.stringify(values) });
       await refreshData();
+      const wasEditing = Boolean(values.eventId);
+      closeModal();
       renderShell();
-      toast('Fixture published. Everyone on the squad has a new notification.');
+      toast(wasEditing ? 'Fixture updated. Every player’s assigned amount and paid status have been kept in sync.' : 'Fixture published. Everyone on the squad has a new notification.');
     } catch (error) {
       toast(error.message, true);
       button.disabled = false;
@@ -981,13 +999,16 @@ document.addEventListener('change', event => {
   if (event.target.name === 'type' && event.target.form?.id === 'fixture-form') {
     const tournament = event.target.value === 'tournament';
     const sunday = event.target.value === 'sunday';
-    const fee = document.querySelector('.tournament-fee-field');
-    const title = document.querySelector('.tournament-title-field');
-    const ballBuyer = document.querySelector('.sunday-ball-buyer-field');
+    const form = event.target.form;
+    const fee = form.querySelector('.tournament-fee-field');
+    const matchFee = form.querySelector('.match-fee-field');
+    const title = form.querySelector('.tournament-title-field');
+    const ballBuyer = form.querySelector('.sunday-ball-buyer-field');
     fee.hidden = !tournament;
+    matchFee.hidden = event.target.value !== 'saturday';
     title.hidden = !tournament;
     ballBuyer.hidden = !sunday;
-    const date = event.target.form.elements.date;
+    const date = form.elements.date;
     const matchDay = event.target.value;
     if (!date.value || !['saturday', 'sunday'].includes(matchDay)) {
       date.setCustomValidity('');

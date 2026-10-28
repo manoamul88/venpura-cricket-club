@@ -204,6 +204,7 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; }
 .form-card { padding: 19px; }
 .field-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
 .field { display: grid; gap: 6px; }
+.field[hidden] { display: none; }
 .field-wide { grid-column: 1/-1; }
 .field-label { color: #536158; font-size: 10px; font-weight: 700; }
 .field-input { width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid #e4e7e1; border-radius: 7px; background: #fff; color: var(--ink); font-size: 11px; }

@@ -987,7 +987,7 @@ function createAppServer({
           const member = data.members.find(item => item.id === memberId);
           if (!event || !member) return respond(404, { error: 'This match or team member could not be found.' });
           const list = event.type === 'tournament' ? data.tournamentPayments : data.payments;
-          const amount = event.type === 'tournament' ? Number(event.entryFee || 500) : WEEKLY_FEE;
+          const amount = event.type === 'tournament' ? Number(event.entryFee ?? 500) : Number(event.matchFee ?? WEEKLY_FEE);
           let payment = list.find(item => item.eventId === eventId && item.memberId === memberId);
           if (!payment) {
             payment = { eventId, memberId, amount, paid: false, paidAt: null };
@@ -1011,12 +1011,17 @@ function createAppServer({
         if (request.method === 'POST' && pathname === '/api/matches') {
           if (!requireAdmin()) return;
           const body = await readBody(request);
+          const existingEvent = body.eventId
+            ? data.events.find(item => item.id === String(body.eventId))
+            : null;
+          if (body.eventId && !existingEvent) return respond(404, { error: 'This fixture could not be found.' });
           const date = String(body.date || '');
           const requestedType = String(body.type || 'weekend');
           if (!['weekend', 'saturday', 'sunday', 'tournament'].includes(requestedType)) {
             return respond(400, { error: 'Choose a Saturday match, Sunday match, or tournament.' });
           }
-          const selectedDay = requestedType === 'saturday' ? 6 : requestedType === 'sunday' ? 0 : null;
+          const selectedDay = requestedType === 'saturday' ? 6 : requestedType === 'sunday' ? 0
+            : requestedType === 'weekend' && validateWeekendDay(date) ? new Date(`${date}T12:00:00Z`).getUTCDay() : null;
           if (selectedDay !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
               new Date(`${date}T12:00:00Z`).getUTCDay() !== selectedDay) {
             return respond(400, { error: `The selected fixture type requires a ${requestedType} date.` });
@@ -1028,34 +1033,82 @@ function createAppServer({
           const opponent = String(body.opponent || '').trim();
           const venue = String(body.venue || '').trim();
           if (!opponent || !venue) return respond(400, { error: 'Opponent and ground are both required.' });
+          const time = String(body.time || '07:30');
+          if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return respond(400, { error: 'Choose a valid fixture start time.' });
+          const amountFromPayments = (list, eventId) => list.find(payment => payment.eventId === eventId)?.amount;
+          const requestedAmount = requestedType === 'tournament'
+            ? body.entryFee === undefined ? existingEvent?.entryFee ?? amountFromPayments(data.tournamentPayments, existingEvent?.id) ?? 500 : Number(body.entryFee)
+            : selectedDay === 6
+              ? body.matchFee === undefined ? existingEvent?.matchFee ?? amountFromPayments(data.payments, existingEvent?.id) ?? WEEKLY_FEE : Number(body.matchFee)
+              : null;
+          if (requestedAmount !== null && (!Number.isInteger(requestedAmount) || requestedAmount < 0 || requestedAmount > 1_000_000)) {
+            return respond(400, { error: 'Enter a whole-number per-player amount between ₹0 and ₹1,000,000.' });
+          }
+          const fixtureTitle = type === 'tournament' ? String(body.title || 'Team tournament').trim() : '';
           const isSundayMatch = type === 'weekend' && selectedDay === 0;
           const ballBuyerId = String(body.ballBuyerId || '');
           if (isSundayMatch && ballBuyerId && !data.members.some(member => member.id === ballBuyerId)) {
             return respond(400, { error: 'Choose a valid player as the Sunday ball buyer.' });
           }
-          const event = {
+          const event = existingEvent || {
             id: `fixture-${randomBytes(7).toString('hex')}`,
-            title: type === 'tournament' ? String(body.title || 'Team tournament').trim()
-              : selectedDay === 6 ? 'Saturday match' : selectedDay === 0 ? 'Sunday match' : 'Weekend fixture',
-            opponent, type, date, time: String(body.time || '07:30'), venue,
-            address: String(body.address || ''), entryFee: type === 'tournament' ? Math.max(0, Number(body.entryFee) || 500) : null,
             createdAt: now().toISOString()
           };
+          Object.assign(event, {
+            title: type === 'tournament' ? fixtureTitle
+              : selectedDay === 6 ? 'Saturday match' : selectedDay === 0 ? 'Sunday match' : 'Weekend fixture',
+            opponent, type, date, time, venue, address: String(body.address || ''),
+            entryFee: type === 'tournament' ? requestedAmount : null,
+            matchFee: type === 'weekend' && selectedDay === 6 ? requestedAmount : null
+          });
           if (isSundayMatch && ballBuyerId) event.ballBuyerId = ballBuyerId;
-          data.events.push(event);
-          if (type === 'weekend' && new Date(`${date}T12:00:00`).getDay() === 6) {
-            data.members.forEach(member => data.payments.push({ eventId: event.id, memberId: member.id, amount: WEEKLY_FEE, paid: false, paidAt: null }));
+          else delete event.ballBuyerId;
+          if (!existingEvent) {
+            data.events.push(event);
+            if (type === 'weekend' && selectedDay === 6) {
+              data.members.forEach(member => data.payments.push({ eventId: event.id, memberId: member.id, amount: event.matchFee, paid: false, paidAt: null }));
+            }
+            if (type === 'tournament') {
+              data.members.forEach(member => data.tournamentPayments.push({ eventId: event.id, memberId: member.id, amount: event.entryFee, paid: false, paidAt: null }));
+            }
+          } else {
+            const amount = type === 'tournament' ? event.entryFee : event.matchFee;
+            const priorPayments = [...data.payments, ...data.tournamentPayments].filter(payment => payment.eventId === event.id);
+            const priorByMember = new Map(priorPayments.map(payment => [payment.memberId, payment]));
+            data.payments = data.payments.filter(payment => payment.eventId !== event.id);
+            data.tournamentPayments = data.tournamentPayments.filter(payment => payment.eventId !== event.id);
+            const targetPayments = type === 'tournament' ? data.tournamentPayments
+              : type === 'weekend' && selectedDay === 6 ? data.payments : null;
+            if (targetPayments) {
+              const retainedFormerPlayers = priorPayments.filter(payment => !data.members.some(member => member.id === payment.memberId))
+                .map(payment => ({ ...payment, amount }));
+              const assignedPayments = data.members.map(member => {
+                const prior = priorByMember.get(member.id);
+                return {
+                  ...prior, eventId: event.id, memberId: member.id, amount,
+                  paid: Boolean(prior?.paid), paidAt: prior?.paidAt || null
+                };
+              });
+              targetPayments.push(...retainedFormerPlayers, ...assignedPayments);
+            }
+            data.scorecards.filter(scorecard => scorecard.eventId === event.id).forEach(scorecard => {
+              scorecard.date = event.date;
+              scorecard.opponent = event.opponent;
+            });
+            data.members.forEach(member => data.notifications.unshift({
+              id: `match-update-${event.id}-${member.id}-${randomBytes(4).toString('hex')}`,
+              title: 'A fixture has been updated',
+              message: `${event.title} vs ${event.opponent} · ${date} at ${event.time}, ${event.venue}. Please check the updated details in the app.`,
+              createdAt: now().toISOString(), read: false, memberId: member.id
+            }));
           }
-          if (type === 'tournament') {
-            data.members.forEach(member => data.tournamentPayments.push({ eventId: event.id, memberId: member.id, amount: event.entryFee, paid: false, paidAt: null }));
-          }
-          data.members.forEach(member => data.notifications.unshift({
+          if (!existingEvent) data.members.forEach(member => data.notifications.unshift({
             id: `match-${event.id}-${member.id}`, title: 'A new match is on the calendar',
             message: `${event.title} vs ${event.opponent} · ${date} at ${event.time}, ${event.venue}. Please submit your availability in the app.`,
             createdAt: now().toISOString(), read: false, memberId: member.id
           }));
           await dataStore.save(data);
-          return respond(201, { event });
+          return respond(existingEvent ? 200 : 201, { event });
         }
         if (request.method === 'POST' && pathname === '/api/matches/cricheroes-scorecard') {
           if (!requireAdmin()) return;

@@ -68,6 +68,39 @@ test('demo members can vote and pay while admin-only match publishing alerts the
   assert.equal(adminLogin.status, 200);
   const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
+  const memberCannotEditFixture = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: memberCookie,
+    body: { eventId: saturday.id, type: 'saturday', date: '2026-10-31', opponent: 'Updated XI', venue: 'Updated Ground', matchFee: 45 }
+  });
+  assert.equal(memberCannotEditFixture.status, 403);
+  const updatedSaturday = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: {
+      eventId: saturday.id, type: 'saturday', date: '2026-10-31', time: '10:15',
+      opponent: 'Updated XI', venue: 'Updated Ground', address: 'North pavilion', matchFee: 45
+    }
+  });
+  assert.equal(updatedSaturday.status, 200);
+  assert.equal((await updatedSaturday.json()).event.matchFee, 45);
+  const updatedTournament = await send(baseUrl, '/api/matches', {
+    method: 'POST', cookie: adminCookie,
+    body: {
+      eventId: 'tournament-october', type: 'tournament', date: '2026-11-07', time: '09:30',
+      title: 'Updated Cup', opponent: 'Cup XI', venue: 'Finals Ground', entryFee: 725
+    }
+  });
+  assert.equal(updatedTournament.status, 200);
+  assert.equal((await updatedTournament.json()).event.entryFee, 725);
+  const updatedBootstrap = await (await send(baseUrl, '/api/bootstrap', { cookie: adminCookie })).json();
+  assert.ok(updatedBootstrap.payments.every(payment => payment.eventId !== saturday.id || payment.amount === 45));
+  assert.equal(updatedBootstrap.payments.find(payment => payment.eventId === saturday.id && payment.memberId === 'm-01').paid, true);
+  assert.equal(updatedBootstrap.payments.find(payment => payment.eventId === saturday.id && payment.memberId === 'm-04').paid, false);
+  assert.ok(updatedBootstrap.tournamentPayments.every(payment => payment.eventId !== 'tournament-october' || payment.amount === 725));
+  assert.equal(updatedBootstrap.tournamentPayments.find(payment => payment.eventId === 'tournament-october' && payment.memberId === 'm-01').paid, true);
+  assert.equal(updatedBootstrap.tournamentPayments.find(payment => payment.eventId === 'tournament-october' && payment.memberId === 'm-03').paid, false);
+  assert.equal(updatedBootstrap.events.find(event => event.id === saturday.id).opponent, 'Updated XI');
+  assert.equal(updatedBootstrap.events.find(event => event.id === 'tournament-october').title, 'Updated Cup');
+
   const memberScorecardLink = await send(baseUrl, '/api/matches/cricheroes-scorecard', {
     method: 'POST', cookie: memberCookie,
     body: { eventId: saturday.id, scorecardUrl: 'https://cricheroes.com/scorecard/123' }
