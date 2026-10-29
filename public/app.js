@@ -423,11 +423,12 @@ function renderMatchMedia() {
   const events = [...state.events].sort((a, b) => b.date.localeCompare(a.date));
   const gallery = state.media.length ? `<div class="media-gallery">${state.media.map(item => {
     const source = `/api/media/file/${encodeURIComponent(item.id)}`;
+    const downloadSource = `${source}?download=1`;
     const preview = item.contentType.startsWith('video/')
       ? `<video src="${source}" controls preload="metadata" aria-label="${esc(item.caption || `${item.eventTitle} video`)}"></video>`
       : `<img src="${source}" alt="${esc(item.caption || `${item.eventTitle} photo`)}" loading="lazy">`;
     const canDelete = state.isAdmin;
-    return `<article class="media-card"><div class="media-preview">${preview}</div><div class="media-details"><strong>${esc(item.eventTitle)}${item.opponent ? ` vs ${esc(item.opponent)}` : ''}</strong><span>${esc(item.memberName)}${item.eventDate ? ` · ${esc(dateParts(item.eventDate).full)}` : ''}</span>${item.caption ? `<p>${esc(item.caption)}</p>` : ''}${canDelete ? `<button class="button button-small button-danger" data-action="delete-media" data-media="${esc(item.id)}">Remove</button>` : ''}</div></article>`;
+    return `<article class="media-card"><div class="media-preview">${preview}</div><div class="media-details"><strong>${esc(item.eventTitle)}${item.opponent ? ` vs ${esc(item.opponent)}` : ''}</strong><span>${esc(item.memberName)}${item.eventDate ? ` · ${esc(dateParts(item.eventDate).full)}` : ''}</span>${item.caption ? `<p>${esc(item.caption)}</p>` : ''}<div class="media-actions"><a class="button button-small" href="${downloadSource}" download>Download</a>${canDelete ? `<button class="button button-small button-danger" data-action="delete-media" data-media="${esc(item.id)}">Remove</button>` : ''}</div></div></article>`;
   }).join('')}</div>` : '<div class="empty-state">No match photos or videos yet. Share a moment from your next game.</div>';
   return `<section class="card media-section"><div class="card-header"><div><h2 class="card-title">From the boundary</h2><p class="card-caption">Match photos and videos, shared with the squad.</p></div><span class="badge badge-gold">${state.media.length} SHARED</span></div>
     <form id="media-upload-form" class="media-upload-form"><label class="field"><span class="field-label">Match *</span><select name="eventId" class="field-input" ${events.length ? 'required' : 'disabled'}><option value="">Choose a match</option>${events.map(item => `<option value="${esc(item.id)}">${esc(item.title)}${item.opponent ? ` vs ${esc(item.opponent)}` : ''} · ${esc(dateParts(item.date).full)}</option>`).join('')}</select></label>

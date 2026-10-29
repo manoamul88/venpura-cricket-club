@@ -664,10 +664,15 @@ function createAppServer({
           const item = data.media.find(media => media.id === mediaFileMatch[1]);
           if (!item) return respond(404, { error: 'This match photo or video could not be found.' });
           const bytes = await mediaStore.get(item.objectPath);
+          const extensions = {
+            'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif',
+            'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov'
+          };
+          const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline';
           response.writeHead(200, securityHeaders({
             'content-type': item.contentType,
             'content-length': bytes.length,
-            'content-disposition': 'inline',
+            'content-disposition': `${disposition}; filename="venpura-${item.id}.${extensions[item.contentType] || 'bin'}"`,
             'cache-control': 'private, no-store'
           }));
           return response.end(bytes);

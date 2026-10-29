@@ -384,8 +384,11 @@ test('match media is private to signed-in members and removable by its owner or 
   const privateFile = await send(baseUrl, `/api/media/file/${id}`, { cookie: memberCookie });
   assert.equal(privateFile.status, 200);
   assert.equal(privateFile.headers.get('content-type'), 'image/png');
+  assert.match(privateFile.headers.get('content-disposition'), /^inline;/);
   assert.deepEqual(Buffer.from(await privateFile.arrayBuffer()), bytes);
   assert.equal((await send(baseUrl, `/api/media/file/${id}`)).status, 401);
+  const unauthenticatedDownload = await send(baseUrl, `/api/media/file/${id}?download=1`);
+  assert.equal(unauthenticatedDownload.status, 401);
 
   const anotherMember = await send(baseUrl, '/api/auth/signup', {
     method: 'POST',
@@ -399,6 +402,10 @@ test('match media is private to signed-in members and removable by its owner or 
   const sharedGallery = await (await send(baseUrl, '/api/media', { cookie: otherCookie })).json();
   assert.equal(sharedGallery[0].id, id);
   assert.equal((await send(baseUrl, `/api/media/file/${id}`, { cookie: otherCookie })).status, 200);
+  const memberDownload = await send(baseUrl, `/api/media/file/${id}?download=1`, { cookie: otherCookie });
+  assert.equal(memberDownload.status, 200);
+  assert.match(memberDownload.headers.get('content-disposition'), new RegExp(`^attachment; filename="venpura-${id}\\.png"$`));
+  assert.deepEqual(Buffer.from(await memberDownload.arrayBuffer()), bytes);
   assert.equal((await fetch(`${baseUrl}/api/media/${id}`, {
     method: 'DELETE', headers: { cookie: otherCookie }
   })).status, 403);
